@@ -225,7 +225,58 @@ skallet virker.**
 
 **Blokkert av:** F-001 (skall dødt) og F-002 (byggerot, krever din aksept).
 
-### Neste runde — hvis skallet virker
+### Neste runde — fase 2
 
-Fase 1, steg 1–8. Begynn med `create-next-app` og `prisma init`. Ikke skriv skjemaet før
-`prisma validate` kan kjøres.
+Kjernedata i bruk, sperrelister og revisjonslogg. Begynn med `src/lib/guards/sperreliste.ts`
+og tjenestefunksjonen `sjekkSperreliste()`, med ruten rundt. Deretter bruddforsøk i
+`tests/`.
+
+**Rekkefølgen som er låst:** fase 2 → 3 → 4 → 5. Ikke hopp til fase 4 fordi den er
+morsommere; fase 3 sin utsendingsvakt er det som gjør fase 4 trygg å bygge.
+
+**Svar som trengs før fase 3:** S1, S2 og S4 i `docs/aapne-sporsmal.md`.
+Fase 2 kan bygges helt uten dem.
+
+---
+
+## Runde logg
+
+### Runde 2 — fase 1
+
+**Gjort:** Bygget hele skjelettet. Next.js 15 + Prisma 7.10.0 + Postgres, 32 tabeller,
+migrasjon mot tom database, selvoppsett ved oppstart, innlogging med scrypt og signert
+cookie, dashbord med de fire spørsmålene, helsesjekk, første cron-rute med egen hemmelighet
+og tørrkjøring, `railway.json`, `Dockerfile`, frødata, sjekkeliste, README og oppdatert
+dokumentasjon. To commits.
+
+**Endret for en bruker av systemet:** Ja, konkret. Kenneth og Fredrik kan nå:
+
+- logge inn og se et dashbord som svarer på hva som kjører, hva som venter på godkjenning,
+  hva som har feilet, og nøyaktig hvilke miljøvariabler som mangler
+- se med egne øyne at all utgående trafikk er av
+- kalle `/api/helse` og få sannheten om systemets tilstand
+- kjøre `npm run sjekkliste` og få 26 kontroller verifisert uten nettverk
+
+Det er en reell endring fra «ingen kode» til «et system de kan åpne og forstå».
+
+**Rettet egne feil underveis:**
+
+1. **Feildiagnosen fra runde 1.** Jeg erklærte at miljøet var nede. Det var det ikke —
+   skallet feilet bare fordi det startet i `G:`-stien. Dokumentert i `LAGT-TIL-GRUNN.md`
+   A-005. Rettelsen kostet én linje; feilen kostet en runde.
+2. **`start-prod.mjs`** brukte `new URL().pathname`, som gir `C:\C:\…` på Windows. Funnet
+   fordi jeg faktisk startet systemet og leste feilmeldingen.
+3. **To manglende back-relasjoner** i skjemaet. Fanget av `prisma validate`.
+4. **Typefeil i sjekkelisten** etter at den ble omdøpt fra `.mjs` til `.ts`. Fanget av
+   `npm run verify` — som er grunnen til at `verify` kjører typekontroll før bygg.
+5. **Rydding av prøvedatamapper** fra runde 1, som det første ryddeforsøket ikke fikk
+   fjernet fordi skallet døde midt i kommandoen.
+
+**Blokkert av:** ingenting. Men to ting venter på Kenneth:
+
+- Aksept av byggerot `C:\VikingPilot` i stedet for `G:` (`LAGT-TIL-GRUNN.md` A-001)
+- Svar på S1, S2, S4 før fase 3
+
+### Neste runde — hvis ingenting endres
+
+Fase 2. Sperrelister og revisjonslogg, med bruddforsøk.
