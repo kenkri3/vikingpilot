@@ -23,6 +23,7 @@ import {
   leggTilSperre,
   opphevSperre,
   normaliserEpost,
+  normaliserDomene,
   epostDomene,
   erUgyldigSperre,
 } from "@/lib/guards/sperreliste";
@@ -106,6 +107,56 @@ describe("sperrelister — bruddforsøk", { skip: !harDatabase ? "DATABASE_URL m
     assert.equal(normaliserEpost("  A@B.NO  "), "a@b.no");
     assert.equal(epostDomene("A@B.NO"), "b.no");
     assert.equal(epostDomene("ugyldig"), null);
+  });
+
+  test("normaliserer domene likt ved innlegging og oppslag", () => {
+    // Dette var en ekte feil: `epost` ble normalisert ved innlegging, men
+    // `epostDomene` ble lagret rå. En domenesperre med store bokstaver ble
+    // liggende og gjorde ingenting, mens operatøren trodde den virket.
+    assert.equal(normaliserDomene("EXAMPLE.NO"), "example.no");
+    assert.equal(normaliserDomene("  Example.No  "), "example.no");
+    assert.equal(normaliserDomene("www.example.no"), "example.no");
+    assert.equal(normaliserDomene("example.no."), "example.no");
+    assert.equal(normaliserDomene("https://example.no/stien/sin"), "example.no");
+    assert.equal(normaliserDomene("noen@example.no"), "example.no");
+
+    // Søppel skal avvises, ikke lagres som en sperre som ikke virker.
+    assert.equal(normaliserDomene(""), null);
+    assert.equal(normaliserDomene("   "), null);
+    assert.equal(normaliserDomene("utenpunktum"), null);
+  });
+
+  test("BRUDD: domenesperre med store bokstaver virker", async () => {
+    const { id } = await leggTilSperre({
+      type: "EPOSTDOMENE",
+      grunn: "MANUELL",
+      epostDomene: "STORE-BOKSTAVER.brudd.invalid",
+      kilde: KILDE,
+    });
+
+    const svar = await sjekkSperreliste({
+      kanal: "EPOST",
+      epost: "noen@store-bokstaver.brudd.invalid",
+    });
+
+    assert.equal(svar.tillatt, false, "domenesperren virket ikke — store bokstaver slapp gjennom");
+
+    // Og den skal være lagret normalisert.
+    const rad = await prisma.sperreliste.findUnique({ where: { id } });
+    assert.equal(rad?.epostDomene, "store-bokstaver.brudd.invalid");
+  });
+
+  test("BRUDD: et ugyldig domene nektes i stedet for å lagres", async () => {
+    await assert.rejects(
+      () =>
+        leggTilSperre({
+          type: "EPOSTDOMENE",
+          grunn: "MANUELL",
+          epostDomene: "ikke-et-domene",
+          kilde: KILDE,
+        }),
+      /ikke et gyldig domene/,
+    );
   });
 
   // -------------------------------------------------------------------------

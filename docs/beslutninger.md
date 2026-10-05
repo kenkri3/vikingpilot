@@ -354,5 +354,55 @@ en adresse ut fra navnemønstre ville sendt post til fremmede.
 Det er en åpen beslutning, ikke en feil. Se `docs/aapne-sporsmal.md`.
 **Status:** gjeldende.
 
+---
+
+## B-029 — Oppvarmingsplanen er per avsender, med en partiell indeks for de globale
+
+**Dato:** fase 5
+**Beslutning:** `Oppvarmingssteg` har `@@unique([avsenderId, dagFraStart])`, pluss en
+partiell unik indeks på `dagFraStart` der `avsenderId IS NULL`.
+**Begrunnelse:** `dagFraStart` var globalt unik. De seks globale trinnene eide dag 0, 4,
+8, 15, 22 og 31, så et avsenderspesifikt trinn kunne ikke opprettes på noen av dem — og
+koden som foretrekker egne trinn var derfor aldri nåbar. Konfigurasjonen så ut til å
+finnes, men kunne ikke brukes.
+**Hvorfor to indekser:** PostgreSQL behandler NULL som forskjellig fra NULL i en unik
+indeks. Kompositt-indeksen alene ville derfor tillatt to globale trinn på samme dag, med
+ulik kvote, og `kvoteForDag` ville plukket ett av dem vilkårlig. Den partielle indeksen
+lukker det.
+**Merk:** dette er det eneste stedet i prosjektet der vi skriver rå SQL utenom
+Prisma-skjemaet, fordi Prisma ikke uttrykker partielle indekser. Det er kommentert både i
+migreringen og i `schema.prisma`.
+**Status:** gjeldende.
+
+---
+
+## B-030 — Domene normaliseres på begge sider
+
+**Dato:** fase 5
+**Beslutning:** `normaliserDomene()` brukes både når en sperre legges inn og når den slås
+opp. Den fjerner store bokstaver, innledende `www.`, avsluttende punktum, protokoll, sti og
+en eventuell `@`-del. Et domene som ikke blir gyldig etter normalisering, avvises med feil.
+**Begrunnelse:** `epost` ble normalisert ved innlegging, men `epostDomene` ble lagret rå.
+En domenesperre med store bokstaver ble derfor liggende og gjorde ingenting, mens
+operatøren trodde domenet var sperret. Det bryter med filens eget løfte om at en sperre
+ikke kan snakkes rundt.
+**Status:** gjeldende.
+
+---
+
+## B-031 — Oppvarmingen er først ferdig når kvoten når døgnkvoten
+
+**Dato:** fase 5
+**Beslutning:** `ferdigOppvarmet` er sant bare når planen ikke har flere trinn, dagen har
+passert det siste trinnet, OG kvoten på det trinnet er minst like høy som avsenderens egen
+`maksPerDag`.
+**Begrunnelse:** Den første regelen var «ingen neste trinn betyr ferdig oppvarmet». Det er
+fail-open: en avsenderspesifikk plan med ett trinn på dag 0 slutter der, og fra dag 1 ville
+det betydd full døgnkvote. En plan som bare begrenser, ville opphevet seg selv etter én dag.
+**Hvordan den ble funnet:** ikke av en test. Den dukket opp da F-025 skulle bevises, fordi
+beviset sammenlignet `sjekkOppvarming` med `effektivDognkvote` og de to var uenige — 1 mot
+100. To funksjoner som skal si det samme om samme tilstand, bør alltid sammenlignes.
+**Status:** gjeldende, låst med egen test.
+
 
 

@@ -519,14 +519,28 @@ model Avsender {
 }
 
 /// Oppvarmingsplan: kvoten vokser over tid. Data, ikke kode.
+///
+/// `avsenderId` null betyr «gjelder alle avsendere» — den globale planen.
+/// Er den satt, gjelder trinnet bare den avsenderen, og overstyrer den globale.
+///
+/// MERK om unikhet: `dagFraStart` var tidligere GLOBALT unik. Det gjorde
+/// avsenderspesifikke planer umulige, fordi de seks globale trinnene eide dag
+/// 0, 4, 8, 15, 22 og 31 — og koden som foretrekker egne trinn var derfor
+/// aldri nåbar. Unikheten er nå per avsender.
+///
+/// En kompositt-unik på (avsenderId, dagFraStart) er dessverre ikke nok alene:
+/// PostgreSQL behandler NULL som forskjellig fra NULL, så to globale trinn på
+/// samme dag ville sluppet gjennom. Migreringen legger derfor til en delvis
+/// unik indeks for NULL-tilfellet i tillegg.
 model Oppvarmingssteg {
   id          String   @id @default(cuid())
   avsenderId  String?
-  dagFraStart Int      @unique
+  dagFraStart Int
   maksPerDag  Int
   beskrivelse String?
   opprettet   DateTime @default(now())
 
+  @@unique([avsenderId, dagFraStart])
   @@index([dagFraStart])
 }
 

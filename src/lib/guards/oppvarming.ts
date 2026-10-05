@@ -173,7 +173,22 @@ export async function sjekkOppvarming(
     };
   }
 
-  const ferdigOppvarmet = neste === null;
+  // Når er planen FERDIG, altså når slipper avsenderen oppvarmingen helt?
+  //
+  // Det er ikke nok at det ikke finnes et neste trinn. En avsenderspesifikk plan
+  // kan slutte på dag 0 — da ville «ingen neste trinn» betydd «ferdig oppvarmet»
+  // allerede fra dag 1, og døgnkvoten ville sluppet til for fullt. Det er en
+  // fail-open-feil, og den ble funnet ved å prøve en plan med ett enkelt trinn.
+  //
+  // Regelen er derfor: planen er ferdig først når vi har passert det SISTE
+  // trinnet i den. Fram til da gjelder trinnets kvote.
+  const sisteStegDag = Math.max(...valgte.map((t) => t.dagFraStart));
+  // Oppvarmingen er ferdig først når planen er ute OG kvoten vi står på er minst
+  // like høy som avsenderens egen døgnkvote. Ellers ville en plan med ett trinn
+  // på dag 0 opphevet seg selv fra dag 1 — det er fail-open, og vi fant det ved
+  // å prøve nettopp en slik plan.
+  const planenErUte = neste === null && dag >= sisteStegDag;
+  const ferdigOppvarmet = planenErUte && kvote >= avsender.maksPerDag;
 
   return {
     tillatt: kvote > 0,

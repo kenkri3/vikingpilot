@@ -3,7 +3,7 @@
 Oppdragets regel 1: *«Ingen påstand uten dekning. Skill verifisert, antatt og ikke
 sjekket.»* Dette dokumentet er stedet der den regelen håndheves.
 
-Sist oppdatert: etter runde 6 (fase 5, første del).
+Sist oppdatert: etter runde 7 (fase 5, andre del).
 
 ---
 
@@ -178,8 +178,9 @@ Alvor etter skalaen BLOKKERER / HØY / MIDDELS / LAV.
 | F-022 | MIDDELS | `npm run verify` kjørte `typecheck` før `build`, men `tsconfig.json` inkluderer `.next/types/**` | **Lukket.** Feilet med `TS6053` fra ren tilstand der `.next` manglet. Rekkefølgen er snudd, og prøvd fra ren tilstand |
 | F-023 | ~~BLOKKERER~~ | ~~`registrerUtsending()` hadde null kallere. Døgnkvote, ukekvote og oppvarmingstak var død kode~~ | **Lukket.** Funnet av uavhengig etterkontroll. Tellingen avledes nå fra `Utsending`-rader med status SENDT, og kan ikke komme ut av synk. Testene oppretter ekte rader i stedet for å skrive telleren direkte med Prisma — den forrige testmetoden var nettopp grunnen til at feilen overlevde 133 tester |
 | F-024 | ~~BLOKKERER~~ | ~~`kanSende()` hoppet stille over volum og oppvarming når `avsenderId` manglet, og den eneste kalleren i produksjon oppga den ikke~~ | **Lukket.** `avsenderId` er påkrevd i typen, og null eller undefined gir avslag. Porten er nå fem sjekker, ikke tre |
-| F-025 | MIDDELS | `Oppvarmingssteg.dagFraStart` er globalt unik, så avsenderspesifikke oppvarmingsplaner kan ikke opprettes | Åpent. De seks globale trinnene eier dag 0, 4, 8, 15, 22 og 31, og `egne.length > 0 ? egne : globale` i `sjekkOppvarming` er derfor ikke nåbar for en ny avsender. Retting: `@@unique([avsenderId, dagFraStart])` |
-| F-026 | MIDDELS | `epostDomene` normaliseres ikke ved innlegging, så en domenesperre lagret med store bokstaver treffer aldri | Åpent. En registrert sperre som operatøren tror er aktiv, gjør ingenting. Bryter med filens eget løfte om at en sperre ikke kan snakkes rundt |
+| F-025 | ~~MIDDELS~~ | ~~`Oppvarmingssteg.dagFraStart` er globalt unik, så avsenderspesifikke oppvarmingsplaner kan ikke opprettes~~ | **Lukket.** Unikheten er nå per avsender, pluss en partiell unik indeks for de globale trinnene. Prøvd: et avsenderspesifikt trinn på dag 0 kan opprettes, overstyrer det globale, og påvirker ikke andre avsendere. Se B-029 |
+| F-026 | ~~MIDDELS~~ | ~~`epostDomene` normaliseres ikke ved innlegging, så en domenesperre med store bokstaver treffer aldri~~ | **Lukket.** `normaliserDomene()` brukes nå på BEGGE sider — både når sperren legges inn og når den slås opp. Et ugyldig domene nektes i stedet for å lagres. Se B-030 |
+| F-031 | ~~HØY~~ | ~~`sjekkOppvarming` slapp kvoten fri så snart planen ikke hadde et neste trinn. En plan med ett trinn opphevet seg selv etter én dag~~ | **Lukket.** Funnet mens F-025 ble bevist, ikke av en test. Oppvarmingen er nå først ferdig når planen er ute OG kvoten er minst like høy som avsenderens døgnkvote. Se B-031 |
 | F-027 | MIDDELS | Rate limiting nøkler på `x-forwarded-for`, som kalleren selv kan sette | Åpent. Gir ubegrensede forsøk mot cron-hemmelighetene og mot `/api/helse`. Hemmelighetene er 50 tegn, så risikoen er begrenset, men gjerdet er svakere enn det ser ut |
 | F-028 | LAV | `/api/helse` svarer `utgaaende: { standard: "av" }` som en streng, ikke fra databasen | Åpent. Sant i dag, men det vil fortsatt si «av» den dagen noen slår på en kanal. Eneste stedet i systemet der en statuspåstand ikke er avledet fra data |
 | F-029 | LAV | Tørrkjøring i `sendMelding` sjekker kanalkonfigurasjon før tørrkjøringsgrenen | Åpent. Med kanalen usatt svarer tørrkjøring `IKKE_KONFIGURERT` og viser ikke hva den ville sendt — forhåndsvisningen mangler nettopp når den er mest nyttig |

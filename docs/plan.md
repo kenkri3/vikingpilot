@@ -504,12 +504,44 @@ Railway-deployen, en kontaktkilde (S12), og at noen andre følger den manuelle l
 
 ---
 
+### Runde 7 — fase 5, andre del
+
+**Gjort:** De to gjenstående funnene som gjorde at konfigurasjon så ut til å virke uten å
+gjøre det. F-025: avsenderspesifikke oppvarmingsplaner kan nå faktisk opprettes, med en
+partiell unik indeks som beholder beskyttelsen på de globale trinnene. F-026: domener
+normaliseres nå på begge sider, så en sperre med store bokstaver virker.
+
+**Endret for en bruker av systemet:** Ja, og begge er av typen som ellers ville lurt oss:
+
+- Kenneth og Fredrik kan nå gi én avsender en egen oppvarmingsplan. Før kunne de legge den
+  inn, men den ville ikke hatt noen virkning — og ingenting ville sagt fra.
+- En domenesperre virker uansett hvordan domenet skrives. Før kunne en sperre se aktiv ut
+  i basen og likevel ikke stoppe noe.
+
+**Rettet egne feil underveis:**
+
+1. **F-031, og den er den viktigste i denne runden.** Mens jeg beviste F-025, oppdaget jeg
+   at `sjekkOppvarming` slapp kvoten fri så snart planen ikke hadde et neste trinn. En
+   avsenderspesifikk plan med ett trinn på dag 0 ville derfor opphevet seg selv fra dag 1,
+   og gitt full døgnkvote. Det er fail-open, og det var jeg selv som innførte det i første
+   forsøk på rettelsen.
+2. Første forsøk på rettelsen var også feil: «passert siste trinn» hjelper ikke når planen
+   bare har ett trinn. Den riktige regelen er at kvoten må nå opp til avsenderens egen
+   døgnkvote før oppvarmingen kan sies å være over.
+
+**Hvordan F-031 ble funnet, og hva det sier:** ingen test fant den. Den dukket opp fordi
+beviset mitt for F-025 sammenlignet `sjekkOppvarming` med `effektivDognkvote`, og de to var
+uenige — 1 mot 100. **To funksjoner som skal si det samme om samme tilstand, bør alltid
+sammenlignes.** Det er en billig sjekk som fant en feil 144 tester gikk forbi.
+
+**Blokkert av:** ingenting jeg kan løse selv.
+
+---
+
 ### Neste runde — hvis ingenting endres
 
-F-025 og F-026 er de mest verdifulle av de gjenstående funnene: begge gjør at en
-konfigurasjon ser ut til å virke uten å gjøre det. F-025 hindrer avsenderspesifikk
-oppvarming, F-026 gjør en domenesperre med store bokstaver virkningsløs.
+De gjenværende funnene er F-027 (rate limiting nøkler på `x-forwarded-for`) og F-029
+(tørrkjøring sjekker kanalkonfigurasjon før tørrkjøringsgrenen). Begge er LAV og kan tas.
 
-Dernest: `leverTilKanal` og selve e-postintegrasjonen. Men **den bør ikke bygges før
-S1 og S2 er besvart** — å bygge en sender uten å vite hvilken kanal og hvilke avsendere
-er å bygge i blinde.
+**Det som virkelig mangler er utenfor min rekkevidde:** Railway-deployen, en kontaktkilde
+(S12), og at Kenneth eller Fredrik prøver den manuelle listen selv.

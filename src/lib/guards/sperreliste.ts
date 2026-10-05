@@ -41,11 +41,51 @@ export function normaliserEpost(epost: string): string {
   return epost.trim().toLowerCase();
 }
 
-/** Henter domenedelen av en e-postadresse, eller null. */
+/**
+ * Normaliserer et domene for sammenligning.
+ *
+ * Dette MÅ gjøres både når en sperre legges inn og når den slås opp. Gjør vi det
+ * bare én av veiene, kan en sperre som er registrert med store bokstaver bli
+ * liggende og gjøre ingenting — operatøren tror domenet er sperret, og det er
+ * det ikke. Det var en ekte feil: `epostDomene` ble lagret rå, mens oppslaget
+ * normaliserte.
+ *
+ * Vi fjerner det som gjør at to skrivemåter av samme domene ser ulike ut:
+ *   - store bokstaver
+ *   - innledende `www.`
+ *   - avsluttende punktum (rot i DNS-notasjon)
+ *   - protokoll og skråstrek, i tilfelle noen limer inn en URL
+ *   - alt etter en eventuell @, i tilfelle noen limer inn en hel adresse
+ */
+export function normaliserDomene(raa: string): string | null {
+  let d = raa.trim().toLowerCase();
+
+  if (d === "") return null;
+
+  // Har noen limt inn en hel adresse, tar vi domenedelen.
+  const alfakrull = d.lastIndexOf("@");
+  if (alfakrull >= 0) d = d.slice(alfakrull + 1);
+
+  // Fjern protokoll og sti.
+  d = d.replace(/^[a-z][a-z0-9+.-]*:\/\//, "");
+  d = d.split("/")[0]!;
+  d = d.split("?")[0]!;
+  d = d.split(":")[0]!;
+
+  // Fjern innledende www. og avsluttende punktum.
+  d = d.replace(/^www\./, "");
+  d = d.replace(/\.+$/, "");
+
+  if (d === "" || !d.includes(".")) return null;
+
+  return d;
+}
+
+/** Henter domenedelen av en e-postadresse, normalisert, eller null. */
 export function epostDomene(epost: string): string | null {
   const deler = normaliserEpost(epost).split("@");
   if (deler.length !== 2 || !deler[1]) return null;
-  return deler[1];
+  return normaliserDomene(deler[1]!);
 }
 
 /**
@@ -306,14 +346,28 @@ function sperreOmfang(inn: SperreInn): void {
 export async function leggTilSperre(inn: SperreInn): Promise<{ id: string; ny: boolean }> {
   sperreOmfang(inn);
 
+  // Begge normaliseres her, og den SAMME verdien brukes til både oppslag og
+  // innsetting. Normaliserte vi bare den ene veien, ville en sperre lagret med
+  // store bokstaver blitt liggende uten å treffe noe.
   const epost = inn.epost ? normaliserEpost(inn.epost) : null;
+
+  const epostDomeneVerdi = inn.epostDomene ? normaliserDomene(inn.epostDomene) : null;
+
+  // Ble et domene oppgitt, men avvist som ugyldig, sier vi fra i stedet for å
+  // lagre en sperre som ikke virker.
+  if (inn.epostDomene && inn.epostDomene.trim() !== "" && epostDomeneVerdi === null) {
+    throw new UgyldigSperre(
+      `«${inn.epostDomene}» er ikke et gyldig domene. En sperre på et ugyldig domene ` +
+        `ville sett ut som den virket, uten å gjøre det.`,
+    );
+  }
 
   const eksisterende = await prisma.sperreliste.findFirst({
     where: {
       type: inn.type,
       grunn: inn.grunn,
       epost,
-      epostDomene: inn.epostDomene ?? null,
+      epostDomene: epostDomeneVerdi,
       kontaktId: inn.kontaktId ?? null,
       organisasjonId: inn.organisasjonId ?? null,
       kanal: inn.kanal ?? null,
@@ -330,7 +384,7 @@ export async function leggTilSperre(inn: SperreInn): Promise<{ id: string; ny: b
       type: inn.type,
       grunn: inn.grunn,
       epost,
-      epostDomene: inn.epostDomene ?? null,
+      epostDomene: epostDomeneVerdi,
       kontaktId: inn.kontaktId ?? null,
       organisasjonId: inn.organisasjonId ?? null,
       kanal: inn.kanal ?? null,

@@ -425,6 +425,87 @@ describe("utsendingsvakt — mot database", { skip: !harDatabase ? "DATABASE_URL
     assert.equal(svar.tillatt, true);
   });
 
+  test("BRUDD: en plan med ett trinn opphever seg IKKE selv etter én dag", async () => {
+    // Dette var en ekte fail-open-feil. En avsenderspesifikk plan med ett trinn
+    // på dag 0 slutter der. Den første regelen var «ingen neste trinn betyr
+    // ferdig oppvarmet», og da ville dag 1 gitt full døgnkvote — planen ville
+    // opphevet seg selv etter én dag.
+    const egen = await prisma.avsender.create({
+      data: {
+        epost: `ett-trinn@${TESTDOMENE}`,
+        domene: TESTDOMENE,
+        status: "OPPVARMING",
+        maksPerDag: 100,
+        oppvarmingStartDato: NAA_TIDLIG,
+      },
+    });
+
+    await prisma.oppvarmingssteg.create({
+      data: { avsenderId: egen.id, dagFraStart: 0, maksPerDag: 1, beskrivelse: "test ett trinn" },
+    });
+
+    const svar = await sjekkOppvarming(egen.id, NAA);
+
+    assert.equal(svar.dag, 14);
+    assert.equal(svar.kvoteIDag, 1, `kvoten skal fortsatt være 1, var ${svar.kvoteIDag}`);
+    assert.equal(
+      svar.ferdigOppvarmet,
+      false,
+      "planen opphevet seg selv — full døgnkvote ville sluppet til",
+    );
+
+    const effektiv = await effektivDognkvote(egen.id, NAA);
+    assert.equal(effektiv.kvote, 1, `effektiv kvote skal være 1, var ${effektiv.kvote}`);
+
+    await prisma.oppvarmingssteg.deleteMany({ where: { avsenderId: egen.id } });
+    await prisma.avsender.delete({ where: { id: egen.id } });
+  });
+
+  test("BRUDD: en avsenderspesifikk plan kan legges på en dag de globale eier", async () => {
+    // F-025: `dagFraStart` var globalt unik, så dette feilet før med
+    // «Unique constraint failed on Oppvarmingssteg_dagFraStart_key».
+    const egen = await prisma.avsender.create({
+      data: {
+        epost: `egen-plan@${TESTDOMENE}`,
+        domene: TESTDOMENE,
+        status: "OPPVARMING",
+        maksPerDag: 100,
+        oppvarmingStartDato: NAA_TIDLIG,
+      },
+    });
+
+    let opprettet = false;
+    try {
+      await prisma.oppvarmingssteg.create({
+        data: { avsenderId: egen.id, dagFraStart: 0, maksPerDag: 2, beskrivelse: "egen dag 0" },
+      });
+      opprettet = true;
+    } catch (feil) {
+      assert.fail(`kunne ikke opprette: ${(feil as Error).message.slice(0, 100)}`);
+    }
+
+    assert.equal(opprettet, true);
+
+    // Den globale planen skal være urørt.
+    const globale = await prisma.oppvarmingssteg.findMany({ where: { avsenderId: null } });
+    assert.ok(globale.length >= 6, `de globale trinnene forsvant: ${globale.length}`);
+
+    await prisma.oppvarmingssteg.deleteMany({ where: { avsenderId: egen.id } });
+    await prisma.avsender.delete({ where: { id: egen.id } });
+  });
+
+  test("BRUDD: to globale trinn på samme dag avvises fortsatt", async () => {
+    // PostgreSQL behandler NULL som forskjellig fra NULL, så kompositt-indeksen
+    // alene hindrer ikke dette. Den partielle indeksen gjør det.
+    await assert.rejects(
+      () =>
+        prisma.oppvarmingssteg.create({
+          data: { avsenderId: null, dagFraStart: 0, maksPerDag: 999, beskrivelse: "duplikat" },
+        }),
+      "et duplikat globalt trinn ble godtatt",
+    );
+  });
+
   // -------------------------------------------------------------------------
   // Idempotens
   // -------------------------------------------------------------------------
