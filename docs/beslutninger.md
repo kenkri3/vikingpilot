@@ -424,5 +424,23 @@ den per instans, og må flyttes til databasen. Railway kjører én replika
 (`numReplicas: 1` i `railway.json`).
 **Status:** gjeldende.
 
+---
+
+## B-033 — Hovedbryteren har én skrivevei, og den logger
+
+**Dato:** fase 5
+**Beslutning:** All skriving til `KanalInnstilling` går gjennom
+`src/lib/kanaler/innstillinger.ts`. Hver endring skriver til revisjonsloggen med aktor,
+tidspunkt, hva som endret seg, og en egen handlingstype. Å slå PÅ utgående trafikk krever
+både navn og en begrunnelse på minst ti tegn.
+**Begrunnelse:** Under uavhengig testing ble `EPOST.utgaaendeAktivert` satt til `true`
+direkte i databasen. Endringen var **usynlig** — ingen revisjonsoppføring, og `oppdatertAv`
+var tom. Vi kunne ikke si hvem, hva eller når ut fra systemet selv. For et felt som avgjør
+om noe kan nå en mottaker, er det ikke godt nok.
+**Prøvd:** `scripts/bevis-kanalspor.ts` slår en kanal på gjennom den eneste skriveveien,
+bekrefter at revisjonsloggen fikk en oppføring med aktor og tidspunkt, at påslåing uten
+begrunnelse nektes, og at endring uten navn nektes.
+**Status:** gjeldende.
+
 
 
