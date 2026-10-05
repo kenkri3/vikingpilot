@@ -289,4 +289,70 @@ ingen utsending.
 grense». Det er låst fast med en egen test.
 **Status:** gjeldende.
 
+---
+
+## B-024 — Et menneske kan ikke legge forslag i godkjenningskøen
+
+**Dato:** fase 4
+**Beslutning:** `leggIForslag()` godtar bare `SYSTEMET` eller `AGENT` som forslagsstiller.
+Et menneske får en feil.
+**Begrunnelse:** Kunne et menneske både foreslå og godkjenne, ville fire-øyne-prinsippet
+vært en formalitet. Køen skal være et ekte mellomledd, ikke en knapp man trykker to ganger.
+**Status:** gjeldende.
+
+---
+
+## B-025 — En avgjørelse krever sesjon, ikke hemmelighet
+
+**Dato:** fase 4
+**Beslutning:** Ruten `/api/godkjenninger` krever innlogget bruker for `godkjenn` og
+`avvis`. Hemmeligheten `CRON_SECRET_SEKVENS` holder bare til `foreslaa`.
+**Begrunnelse:** Agenten har hemmeligheten. Hadde hemmeligheten holdt til å godkjenne,
+kunne agenten godkjent sitt eget forslag — og arkitekturregelen ville vært brutt uten at
+noen så det. En avgjørelse skal kunne knyttes til et navngitt menneske.
+**Status:** gjeldende.
+
+---
+
+## B-026 — Et utkast i køen blokkerer ikke neste sekvenssteg
+
+**Dato:** fase 4
+**Beslutning:** `VENTER_GODKJENNING` teller som «ferdig behandlet» av sekvensmotoren.
+Sekvensen går videre til neste steg selv om ingen har godkjent utkastet ennå.
+**Begrunnelse:** Alternativet ville latt ett utkast som ingen godkjenner stoppe hele
+sekvensen for alltid. Ventetiden regnes fortsatt fra `utfortTid`, altså fra steget
+faktisk kjørte, så rekkefølgen og takten holdes.
+**Konsekvens:** Et menneske kan komme tilbake til en kø med flere ventende utkast fra
+samme sekvens. Det er med vilje — køen skal kunne tømmes i ett sitt.
+**Status:** gjeldende.
+
+---
+
+## B-027 — Godkjenning flytter også dialogmeldingen
+
+**Dato:** fase 4
+**Beslutning:** `godkjenn()` og `avvis()` oppdaterer `DialogMelding.status` sammen med
+`Godkjenning.status`.
+**Begrunnelse:** Dette var en ekte feil. Godkjenningen ble satt til `GODKJENT`, men
+meldingen ble stående i `VENTER_GODKJENNING`. Utsendingsjobben ser på meldingens status,
+så en godkjent melding ville blitt liggende usendt for alltid — og alt så riktig ut.
+Ingen enhetstest fant det, fordi de testet hver sin del. Det ble funnet ved å kjøre
+prospekt → sekvens → utkast → kø → godkjenning → utsending i én sammenhengende kjede.
+**Status:** gjeldende, låst med egen test.
+
+---
+
+## B-028 — Kontakter kommer ikke fra Enhetsregisteret
+
+**Dato:** fase 4
+**Beslutning:** Systemet finner ikke på e-postadresser. Prospekter uten kontakt kan ikke
+sekvenseres, og motoren rapporterer hvor mange det gjelder i stedet for å gjette.
+**Begrunnelse:** Enhetsregisteret oppgir virksomheter, ikke personer eller adresser.
+Roller og fødselsnummer ligger bak et eget autorisert API vi ikke bruker. Å konstruere
+en adresse ut fra navnemønstre ville sendt post til fremmede.
+**Konsekvens:** Målgruppen kan fylles, men ikke kontaktes, før en kontaktkilde er valgt.
+Det er en åpen beslutning, ikke en feil. Se `docs/aapne-sporsmal.md`.
+**Status:** gjeldende.
+
+
 

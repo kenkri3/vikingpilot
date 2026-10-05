@@ -3,7 +3,7 @@
 Oppdragets regel 1: *«Ingen påstand uten dekning. Skill verifisert, antatt og ikke
 sjekket.»* Dette dokumentet er stedet der den regelen håndheves.
 
-Sist oppdatert: etter runde 4 (fase 3).
+Sist oppdatert: etter runde 5 (fase 4).
 
 ---
 
@@ -98,6 +98,29 @@ Påstander jeg har målt, med kommandoen eller resultatet som beviser dem.
 | Feilet melding blokkerer også | Test |
 | Tellere nullstilles ved norsk midnatt, ikke etter 24 timer | Test: 23:00 UTC er 00:00 norsk tid, og døgnet har skiftet |
 
+### Fase 4 — sekvensmotoren og godkjenningskøen
+
+| Påstand | Bevis |
+|---|---|
+| **Kjeden virker ende-til-ende** | `npx tsx scripts/e2e-fase4.ts` → prospekt → sekvens startet → utkast → kø → godkjent → utsendingsjobben vurderte meldingen. **Alt besto** |
+| **Ingenting sendes, selv etter godkjenning** | Etter hele kjeden: `Utsending` med status SENDT = **0**. Grunnen: «E-postkanalen er ikke konfigurert» |
+| Et menneske kan ikke legge forslag i køen | Test: `Ugyldig forslagsstiller` |
+| Bare SYSTEMET og AGENT kan foreslå | Test |
+| En godkjenning kan ikke tas to ganger | Test: andre forsøk avvises med «står allerede som GODKJENT» |
+| Et avvist forslag kan ikke godkjennes etterpå | Test |
+| Parallell godkjenning slipper bare én gjennom | Test med tre samtidige `Promise.all`. Én beslutning registrert |
+| En avgjørelse uten navn avvises | Test: status forblir VENTER |
+| `erKlarTilSending` sier nei for alt unntatt GODKJENT | Test over VENTER, AVVIST, GODKJENT og ukjent id |
+| Beslutningen registrerer hvem, når og kommentar | Test mot `Godkjenningsbeslutning` |
+| **Motoren SENDER ingenting — den lager utkast** | Test: meldingen står som `VENTER_GODKJENNING`, og null `Utsending`-rader opprettes |
+| **Tørrkjøring skriver ingenting** | Test: antall godkjenninger, meldinger og steg er uendret |
+| **Godkjenning flytter også meldingen** | Test: `DialogMelding.status` går fra `VENTER_GODKJENNING` til `GODKJENT`, og utsendingsjobben finner den |
+| Avvisning flytter meldingen til AVVIST | Test |
+| Ventetid regnes fra forrige steg, ikke fra start | Test: 72 timer etter steg 1, ikke etter sekvensstart |
+| En forsinket kjøring komprimerer ikke sekvensen | Test |
+| Kanalen stenger alt uansett | Test: `kanSende` nekter for EPOST |
+| Sjekkelisten dekker invariantene | **51 bestått**, inkludert «ingen melding er godkjent uten en beslutning» og «ingen utsending er sendt uten en godkjenning» |
+
 ---
 
 ## Antatt
@@ -146,6 +169,9 @@ Alvor etter skalaen BLOKKERER / HØY / MIDDELS / LAV.
 | F-013 | ~~HØY~~ | ~~Sektor-utledningen avviste ALT fra det åpne API-et som «ukjent sektor»~~ | **Lukket.** `sektor`-feltet er tomt i praksis. 0 godkjente av 200 før rettelsen. Se B-021 |
 | F-014 | MIDDELS | Enhetsregisteret oppgir ikke `fylke` for de fleste virksomheter | Åpent. Fylke-filteret virker, men slipper bare gjennom det som faktisk har fylkesnavn. Se `docs/aapne-sporsmal.md` |
 | F-015 | LAV | Enhetsregisteret oppgir ikke `antallAnsatte` for de fleste virksomheter | Åpent, ikke en feil. 185 av 200 ble avvist på `ANSATTE` fordi feltet var tomt. Målgruppens `minAnsatte` bestemmer hvor stort tapet er |
+| F-016 | ~~HØY~~ | ~~Godkjenning flyttet ikke dialogmeldingen, så godkjente meldinger ville aldri blitt sendt~~ | **Lukket.** Ville sett ut som om alt virket. Funnet ved å kjøre hele kjeden ende-til-ende. Se B-027 |
+| F-017 | MIDDELS | Enhetsregisteret oppgir ingen e-postadresser. 13 prospekter står uten kontakt | Åpent, og ikke en feil i koden. Sekvensmotoren rapporterer `utenKontakt` i stedet for å gjette. Må løses med en kontaktkilde, se B-028 |
+| F-018 | LAV | `leverTilKanal()` er en stubbe som alltid svarer «ikke bygget» | Åpent, bevisst. Kanalen er ikke konfigurert, og systemet sier det ærlig |
 
 **Ingen funn av alvor BLOKKERER eller HØY står åpent.** Stoppkriterium 8 er oppfylt for
 denne runden.

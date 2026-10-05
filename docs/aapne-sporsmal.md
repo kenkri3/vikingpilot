@@ -107,6 +107,35 @@ Produktmodellen har SKU og pris. Jeg trenger de faktiske verdiene.
 
 ## Blokkerer fase 5
 
+### S12 — Hvor kommer kontaktene fra?
+
+**Dette er det viktigste åpne spørsmålet nå.**
+
+Enhetsregisteret oppgir virksomheter — navn, orgnr, adresse, næringskode. Det oppgir
+**ikke** e-postadresser eller personer. Roller og fødselsnummer ligger bak et eget
+autorisert API som vi ikke bruker, og som krever avtale.
+
+Konsekvensen er målt, ikke antatt: de 13 prospektene pipelinen har hentet, har ingen
+kontakt. Sekvensmotoren svarer `utenKontakt: 13` i stedet for å finne på en adresse.
+Systemet er bygget for å sende, men har ingen å sende til.
+
+Jeg finner ikke på e-postadresser. Å konstruere `fornavn.etternavn@firma.no` ville sendt
+post til fremmede, og det er nøyaktig den typen gjetning oppdraget forbyr.
+
+Hva vil du at vi gjør?
+
+- [ ] **Vi henter roller fra Enhetsregisterets autoriserte API.** Krever avtale med
+      Brønnøysundregistrene. Gir navn og rolle, men fortsatt ikke e-post.
+- [ ] **Vi har en kontaktliste.** Lim den inn, så bygger jeg importen.
+- [ ] **Vi henter fra nettsidene deres.** Krever egen innhøsting, og reiser
+      personvernspørsmål vi må avklare før vi begynner.
+- [ ] **Vi tester med oppdiktede kontakter først**, og løser kilden senere.
+- [ ] **Annet:**
+
+**Svar:**
+
+---
+
 ### S8 — Hvilke nøkler finnes allerede?
 
 Jeg bygger «ikke konfigurert»-tilstander uansett. Dette spørsmålet avgjør hva som er

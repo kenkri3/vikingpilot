@@ -19,8 +19,8 @@
 | 1 | Skjelett: stack, skjema, migreringer, innlogging, tomt dashbord, deploybart | **Fullført og verifisert** |
 | 2 | Kjernedata, sperrelister, revisjonslogg | **Fullført og verifisert** |
 | 3 | Enhetsregister-pipeline og utsendingsvakt | **Fullført og verifisert** mot ekte data |
-| 4 | Sekvensmotor med tørrkjøring, og godkjenningskø | Neste |
-| 5 | Herding: frødata, sjekkeliste, dokumentasjon, manuell liste | Ikke startet |
+| 4 | Sekvensmotor med tørrkjøring, og godkjenningskø | **Fullført og verifisert** ende-til-ende |
+| 5 | Herding: frødata, sjekkeliste, dokumentasjon, manuell liste | Neste |
 
 **Ingen blokkering står åpen.** F-001 (skallet) var feildiagnostisert og er lukket;
 byggerot-spørsmålet er løst teknisk og venter bare på din aksept. Se `docs/status.md`.
@@ -210,21 +210,36 @@ betyr at `minAnsatte` i målgruppen koster treff. Se F-014 og F-015 i `docs/stat
 
 ## Fase 4 — Sekvensmotor og godkjenningskø
 
-**Mål:** oppfølgingen skjer av seg selv, men ingenting går ut uten at et menneske har sagt ja.
+**Status: fullført og verifisert ende-til-ende.**
 
-**Steg:**
+**Steg og resultat:**
 
-1. `Sekvens` med `versjon`. Steg med ventetid og kanal
-2. Avslutningsregler: svar, avmelding, kunde, manuell stopp
-3. Kjøring i tørrkjøringsmodus: logg hva den ville gjort, send ingenting
-4. `Godkjenning`: hvem la inn, hvem godkjente, når, og hva som ble godkjent
-5. Alt med ekstern konsekvens går gjennom køen. Ingen omvei
-6. Agentens verktøyflate: funksjoner og ruter som senere pakkes som MCP-verktøy
+1. ✅ `godkjenning/ko.ts`: forslag, godkjenning, avvisning, med navn og tidspunkt
+2. ✅ Avgjørelser krever sesjon; hemmeligheten holder bare til å foreslå
+3. ✅ `sekvens/motor.ts`: velger neste steg, regner planlagt tid, lager utkast
+4. ✅ `sekvens/utsending.ts`: den eneste veien til en mottaker, med hele kjeden av sjekker
+5. ✅ `/api/cron/sekvens` og `/api/cron/utsending`, begge med tørrkjøring
+6. ✅ `/api/godkjenninger` som verktøyflate
+7. ✅ `scripts/e2e-fase4.ts` som kjører hele kjeden og sjekker tilstanden underveis
 
-**Stoppkriterium:** en sekvens kan kjøres ende-til-ende i tørrkjøring og produsere en
-godkjenningskø, uten at én byte går ut.
+**Bevis:** se `docs/status.md`, avsnittet «Fase 4».
 
-Blokkeres delvis av S6 (sekvensens form) og S7 (produkt og pris).
+**Én ekte feil funnet — og den ble bare funnet av ende-til-ende-kjøringen:**
+
+Godkjenningen ble satt til `GODKJENT`, men `DialogMelding.status` ble stående i
+`VENTER_GODKJENNING`. Utsendingsjobben ser på meldingens status. En godkjent melding ville
+derfor blitt liggende usendt **for alltid**, og alt ville sett riktig ut.
+
+26 enhetstester fant det ikke, fordi hver av dem testet sin egen del. Det ble funnet ved å
+kjøre prospekt → sekvens → utkast → kø → godkjenning → utsending i én sammenhengende kjede
+og lese tilstanden mellom hvert ledd. Se B-027.
+
+**Én designbeslutning tatt underveis:** skal et utkast som venter på godkjenning blokkere
+neste steg? Nei — se B-026.
+
+**Én ærlig begrensning:** Enhetsregisteret oppgir virksomheter, ikke e-postadresser. De 13
+prospektene står uten kontakt, og motoren sier `utenKontakt: 13` i stedet for å finne på en
+adresse. Se B-028 og F-017.
 
 ---
 
@@ -378,13 +393,39 @@ standard. 71 nye tester. Sjekkelisten utvidet fra 32 til 44 kontroller.
 
 ---
 
-### Neste runde — fase 4
+### Runde 5 — fase 4
 
-Sekvensmotoren og godkjenningskøen. Begynn med `src/lib/sekvens/`: velg neste steg, regn
-ut planlagt tid, kjør i tørrkjøring. Deretter `src/lib/godkjenning/`.
+**Gjort:** Godkjenningskøen og sekvensmotoren. Kø med atomiske avgjørelser, sekvensmotor
+som lager utkast og aldri sender, utsendingsjobb med hele kjeden av sjekker, to nye
+cron-ruter, verktøyflaten `/api/godkjenninger`, og et ende-til-ende-skript. 26 nye tester.
+Sjekkelisten utvidet fra 44 til 51 kontroller.
 
-Fase 4 er den første fasen som faktisk kan føre til at noe går ut. Derfor er rekkefølgen
-viktig: godkjenningskøen bygges **før** sekvensmotoren kobles til noe som kan sende.
+**Endret for en bruker av systemet:** Ja, og dette er den fasen som betyr mest.
 
-**Svar som trengs:** S6 (sekvensens form) og S7 (produkt og pris) gjør innholdet riktig,
-men mekanikken kan bygges med frødata først.
+- Kenneth og Fredrik har nå en kø å tømme. De ser hva som venter, og de bestemmer.
+- Systemet kan ikke lenger bare *påstå* at alt går gjennom køen — det er håndhevet, og
+  sjekkelisten verifiserer invariantene: ingen melding er godkjent uten en beslutning,
+  ingen utsending er sendt uten en godkjenning.
+- Hele kjeden er bevist ende-til-ende: prospekt → sekvens → utkast → kø → godkjenning →
+  utsendingsjobb. Den siste stoppet ærlig med «E-postkanalen er ikke konfigurert».
+
+**Rettet egne feil underveis:**
+
+1. **Godkjenning flyttet ikke meldingen.** En godkjent melding ville aldri blitt sendt.
+   26 enhetstester fant det ikke; ende-til-ende-kjøringen gjorde det.
+2. Testoppsettet ryddet ikke kontakter, som er unike på e-post. En krasjet kjøring gjorde
+   at alle påfølgende tester feilet på en fremmednøkkel.
+3. `kanSende` dekket bare kanal og sperreliste. Nå dekker den også tidsvindu, oppvarming
+   og volum, slik at sendende ruter ikke kan glemme en sjekk.
+
+**Blokkert av:** ingenting.
+
+---
+
+### Neste runde — fase 5
+
+Herding. Sjekkelisten prøvd fra tom mappe, uavhengig etterkontroll av en annen agent,
+og en gjennomgang av alle åpne funn.
+
+**Det viktigste som gjenstår før systemet kan brukes på ekte:** en kontaktkilde. Uten
+e-postadresser kan målgruppen fylles, men ikke kontaktes. Se B-028.
