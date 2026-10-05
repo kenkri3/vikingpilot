@@ -1,0 +1,125 @@
+# Status — verifisert, antatt, ikke sjekket
+
+Oppdragets regel 1: *«Ingen påstand uten dekning. Skill verifisert, antatt og ikke
+sjekket.»* Dette dokumentet er stedet der den regelen håndheves.
+
+Sist oppdatert: etter runde 2 (fase 1).
+
+---
+
+## Verifisert
+
+Påstander jeg har målt, med kommandoen eller resultatet som beviser dem.
+
+### Miljøet
+
+| Påstand | Bevis |
+|---|---|
+| `G:` er Google Drive for Desktop og kan ikke brukes til bygging | `Win32_LogicalDisk G:` → `DriveType 3`, `FileSystem FAT32`, `VolumeName "Google Drive"`. `npm install ms@2.1.3` rapporterte suksess, men hver fil var **0 byte**; `npm ls` → `ms@ invalid`. `mklink /J` → «Local NTFS volumes are required» |
+| Skallet virker — det feilet bare fordi det startet i `G:`-stien | `pwsh` med `workdir C:\VikingPilot` → `shell alive from C:`. Uten workdir → `spawn powershell.exe ENOENT` |
+| `grep` og `glob` virker med `C:`-arbeidsmappe | `grep` fant 9 treff i `docs/`; `glob` fant 9 `.md`-filer |
+| Nedlasting med `curl` virker der `Invoke-WebRequest` feilet | Postgres-binærfiler: 329 891 687 byte, identisk med serverens `Content-Length`. `curl` exit 0 |
+| Port 3000 er opptatt av et annet prosjekt | `Get-NetTCPConnection -LocalPort 3000` → PID 11656, kommandolinje viser `OneDrive\...\Tønsberglivet\...\next start` |
+| Denne økten kjørte uten admin | `IsInRole(BuiltInRole.Administrator)` → `False` |
+| `docs/spesifikasjon.md` fantes ikke | Søkt i arbeidsmappen, tre søsterrepoer, Downloads, Desktop, Documents og fem AI-verktøymapper — ingen treff |
+
+### Bygget
+
+| Påstand | Bevis |
+|---|---|
+| Prisma 7.10.0 er stabil, `latest` er en release candidate | `npm view prisma dist-tags` → `latest: 8.0.0-rc.19`, `prev: 7.10.0`. `@prisma/client` sto på 7.10.0 |
+| Prisma 7 krever `prisma.config.ts` og fjerner `url` fra skjemaet | `prisma validate` → `P1012: The datasource property 'url' is no longer supported` |
+| Skjemaet er gyldig | `npx prisma validate` → «The schema at prisma\schema.prisma is valid 🚀» |
+| Klienten genereres til riktig sted med riktig eksport | `prisma generate` → «Generated Prisma Client (7.10.0) to .\src\generated\prisma». `client.ts` inneholder `export const PrismaClient` |
+| Skjemaet setter seg selv opp mot en **tom** database | `prisma migrate dev --name initial` mot nyopprettet `vikingpilot` → «Your database is now in sync». 32 tabeller i `public` |
+| Typekontroll er ren | `npx tsc --noEmit` → exit 0, ingen feil |
+| Bygget er grønt | `npm run build` → «Compiled successfully in 34.4s», alle 6 ruter bygget |
+| Testene er grønne | `node --import tsx --test` → 9 tester, 9 bestått, 0 feilet |
+| Frødataene kjører | `tsx prisma/seed.ts` → 6 kanaler, 4 integrasjoner, 5 cron-jobber, 6 oppvarmingstrinn, 1 målgruppe, 2 produkter, 1 sekvens med 3 steg, 2 brukere |
+
+### Systemet i drift
+
+| Påstand | Bevis |
+|---|---|
+| Helsesjekken svarer riktig | `GET /api/helse` → **HTTP 200**, `database.status: "ok"`, alle fire integrasjoner med navngitte manglende nøkler |
+| Innloggingssiden vises | `GET /login` → HTTP 200, 7891 tegn, inneholder «VikingPilot» og «Logg inn» |
+| Dashbordet krever innlogging | `GET /dashboard` uten cookie → **HTTP 307** (omdirigering) |
+| Cron nekter når hemmeligheten mangler | `GET /api/cron/enhetsregister` uten hemmelighet → **HTTP 503**, «CRON_SECRET_ENHETSREGISTER er ikke satt» |
+| Cron nekter ved feil hemmelighet | Med `Bearer helt-feil` → **HTTP 401**, «Feil hemmelighet» |
+| Cron tørrkjører som standard | Med riktig hemmelighet, ingen parameter → `torrkjoering: true` |
+| Cron finner ikke på data | Samme kall → `status: "ikke_konfigurert"`, navngir `ENHETSREGISTERET_API_KEY`, og svarer hva den *ville* gjort |
+| **Ingen kanal kan sende** | `SELECT count(*) FROM "KanalInnstilling" WHERE "utgaaendeAktivert" = true` → **0**. Alle 6 kanaler `f`, `maksPerDag` 0 |
+| Idempotens avviser duplikat | Sjekkelisten: to utsendinger med samme nøkkel → andre avvises |
+| Tidsvindu stenger helg, rød dag og natt | Sjekkelisten: søndag, første juledag og natt kl. 04:00 avvises alle |
+| Norske røde dager regnes riktig | Skjærtorsdag 2026 → 2. april (påsken beregnes, ikke slås opp). 12 røde dager i 2026 |
+| Hemmeligheter maskeres i logger | Tilkoblingsstreng med passord → passordet erstattet med `[skjult]` |
+| Sjekkelisten er grønn | `npm run sjekkliste` → **26 bestått, 0 feilet** |
+
+---
+
+## Antatt
+
+Påstander jeg tror er riktige, men ikke har bevist.
+
+| Antakelse | Hvorfor jeg tror det | Hvordan den verifiseres |
+|---|---|---|
+| Dockerfile bygger og kjører på Railway | Den bygger lokalt med `npm ci` + `prisma generate` + `next build` | Første deploy, krever din Railway-konto |
+| `prisma migrate deploy` virker mot Railway-Postgres | Samme kommando virket lokalt mot tom database | Første deploy |
+| Org.nr 933 851 222 er riktig | Oppgitt i oppdraget | Slå opp i Enhetsregisteret når nøkkel finnes |
+| Enhetsregisteret kan nås med API-nøkkel | Allment kjent | Fase 3 |
+| `pg_ctl register` gir en fungerende Windows-tjeneste | Dokumentert Postgres-atferd | Krever forhøyet ledetekst — ikke kjørt |
+| Innlogging virker ende-til-ende i nettleser | Alle delene er testet hver for seg, men jeg har ikke sendt inn skjemaet | Klikk gjennom selv, eller jeg tester med en HTTP-klient |
+
+---
+
+## Ikke sjekket
+
+- Om Railway-kontoen har ledig prosjekt, og om Postgres-tillegget er aktivert.
+- Hvilke miljøvariabler som allerede ligger i Railway for Vikingnet-relaterte tjenester.
+- Hvordan VikingCRM-webhooken faktisk er formet — hvilke felter den sender, og om den signerer.
+- Om agentplattformen støtter MCP over HTTP eller bare stdio.
+- Hvilke NACE-koder som er relevante for Vikingnets målgruppe.
+
+---
+
+## Åpne funn
+
+Alvor etter skalaen BLOKKERER / HØY / MIDDELS / LAV.
+
+| # | Alvor | Funn | Status |
+|---|---|---|---|
+| F-001 | ~~BLOKKERER~~ | ~~Skallet er dødt~~ | **Lukket. Var feildiagnostisert.** Skallet virket hele tiden; det feilet bare fordi det startet i `G:`-stien. Se `LAGT-TIL-GRUNN.md` A-005 |
+| F-002 | ~~BLOKKERER~~ | ~~`G:` kan ikke brukes som byggerot~~ | **Lukket.** Byggerot flyttet til `C:\VikingPilot`. Krever fortsatt din aksept, se A-001 |
+| F-003 | MIDDELS | Revisjonsloggens uforanderlighet håndheves bare i applikasjonslaget, ikke med databasetrigger | Åpent, bevisst. Se B-007 |
+| F-004 | LAV | `docs/spesifikasjon.md` er skrevet av meg, ikke av deg | Åpent. Se A-002 |
+| F-005 | LAV | Port 3000 er opptatt av Tønsberglivet-prosjektet på denne maskinen | Dokumentert i `docs/manuell-oppsett.md` A5. VikingPilot bruker 3100 lokalt. Ikke berørt |
+| F-006 | ~~MIDDELS~~ | ~~`start-prod.mjs` brukte `new URL().pathname`, som gir `C:\C:\…` på Windows~~ | **Lukket.** Rettet med `fileURLToPath`. Feilet høyt ved første kjøring og ble funnet fordi jeg faktisk startet systemet |
+| F-007 | LAV | `@prisma/adapter-pg` 7.10.0 gir en `DEP0190`-advarsel om `shell: true` i `start-prod.mjs` | Åpent, ufarlig. `spawn` med `shell` brukes bare for `npx` på Windows |
+
+**Ingen funn av alvor BLOKKERER eller HØY står åpent.** Stoppkriterium 8 er oppfylt for
+denne runden.
+
+---
+
+## Ærlig avgrensning
+
+Det som er bygget og verifisert er **fase 1: skjelettet**. Følgende står igjen, og
+ingenting av det er påstått ferdig:
+
+- Fase 2: kjernedata i bruk, sperrelister, revisjonslogg
+- Fase 3: Enhetsregister-pipelinen og utsendingsvakten
+- Fase 4: sekvensmotoren og godkjenningskøen
+- Fase 5: herding, full frødata og manuell liste prøvd fra tom mappe
+
+Se `docs/plan.md` for status per fase.
+
+---
+
+## Hvordan denne filen brukes
+
+Etter hver runde:
+
+1. Flytt påstander som er blitt målt fra «antatt» til «verifisert», med beviset.
+2. Legg til nye antakelser eksplisitt — ikke la dem ligge implisitt i koden.
+3. Oppdater «åpne funn».
+4. Stoppkriterium 8 er oppfylt først når ingen rader står med BLOKKERER eller HØY.

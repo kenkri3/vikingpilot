@@ -1,0 +1,920 @@
+// VikingPilot — databaseskjema
+//
+// Ni moduler: kjernedata, sperrelister, enhetsregister-pipeline, utsendingsvakt,
+// sekvensmotor, godkjenningskø, revisjonslogg, tidsplan og dashbord.
+//
+// Tre regler som styrer dette skjemaet:
+//
+//   1. Alle guardrails er data, ikke kode. Volum, sperrelister, oppvarmingsplan og
+//      tidsvinduer ligger i tabeller, ikke i en prompt.
+//   2. Utgående trafikk er av som standard. KanalInnstilling.utgaaendeAktivert er
+//      false fra første rad, og det finnes ingen kodevei som setter den til true selv.
+//   3. Revisjon er uforanderlig. Det håndheves i applikasjonslaget — det finnes ingen
+//      oppdaterings- eller slettefunksjon for Revisjon. Se docs/beslutninger.md B-007.
+
+// Prisma 7: output er påkrevd, og klienten genereres ikke lenger i node_modules.
+// Tilkoblingsadressen ligger i prisma.config.ts, ikke her. Se docs/beslutninger.md B-013.
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ===========================================================================
+// Oppslagsverk
+// ===========================================================================
+
+enum Kanal {
+  EPOST
+  TELEFON
+  SMS
+  LINKEDIN
+  WEBHOOK
+  MANUELL
+}
+
+enum Sektor {
+  PRIVAT
+  OFFENTLIG
+  UKJENT
+}
+
+// ===========================================================================
+// Modul 1 — Kjernedata
+// ===========================================================================
+
+/// En virksomhet. Speiler Enhetsregisteret, men er vår egen kopi.
+model Organisasjon {
+  id             String   @id @default(cuid())
+  orgnr          String   @unique
+  navn           String
+  normalisertNavn String
+  organisasjonsform String?
+  naeringskode   String?
+  naeringsbeskrivelse String?
+  sektor         Sektor   @default(UKJENT)
+  antallAnsatte  Int?
+  stiftetDato    DateTime?
+  registrertDato DateTime?
+  konkurs         Boolean @default(false)
+  underAvvikling Boolean @default(false)
+  adresse        String?
+  postnummer     String?
+  poststed       String?
+  fylke          String?
+  kommunenummer  String?
+  nettside       String?
+  kilde          String   @default("ENHETSREGISTERET")
+  raaData        Json?
+  sistHentet     DateTime?
+  opprettet      DateTime @default(now())
+  oppdatert      DateTime @updatedAt
+
+  kontakter   Kontakt[]
+  prospekter  Prospekt[]
+  kunder      Kundeforhold[]
+  sperrelister Sperreliste[]
+  avtaler     Avtale[]
+
+  @@index([fylke])
+  @@index([naeringskode])
+  @@index([sektor])
+  @@index([antallAnsatte])
+  @@index([normalisertNavn])
+}
+
+/// En person hos en organisasjon.
+model Kontakt {
+  id            String   @id @default(cuid())
+  organisasjonId String?
+  fornavn       String
+  etternavn     String
+  epost         String?  @unique
+  telefon       String?
+  rolle         String?
+  erBeslutningstaker Boolean @default(false)
+  linkedinUrl   String?
+  notat         String?
+  samtykkeGrunnlag String?
+  samtykkeDato  DateTime?
+  opprettet     DateTime @default(now())
+  oppdatert     DateTime @updatedAt
+
+  organisasjon Organisasjon? @relation(fields: [organisasjonId], references: [id], onDelete: SetNull)
+  prospekter   Prospekt[]
+  dialoger     Dialog[]
+  sperrelister Sperreliste[]
+  oppgaver     Oppgave[]
+
+  @@index([organisasjonId])
+  @@index([etternavn])
+}
+
+enum ProspektStatus {
+  NY
+  KVALIFISERT
+  I_SEKVENS
+  DIALOG
+  MOTE_BESTILT
+  TILBUD_SENDT
+  VUNNET
+  TAPT
+  AVVIST
+  SPERRET
+}
+
+/// Et kvalifisert treff: en organisasjon vi vil kontakte.
+model Prospekt {
+  id            String   @id @default(cuid())
+  organisasjonId String
+  kontaktId     String?
+  status        ProspektStatus @default(NY)
+  kilde         String   @default("ENHETSREGISTERET")
+  /// Bøtte 2: agenten vurderer relevans. Systemet lagrer bare vurderingen.
+  score         Int?
+  begrunnelse   String?
+  maalgruppeId  String?
+  kvalifisertDato DateTime?
+  nesteHandling DateTime?
+  opprettet     DateTime @default(now())
+  oppdatert     DateTime @updatedAt
+
+  organisasjon Organisasjon @relation(fields: [organisasjonId], references: [id], onDelete: Cascade)
+  kontakt      Kontakt?     @relation(fields: [kontaktId], references: [id], onDelete: SetNull)
+  maalgruppe   Maalgruppe?  @relation(fields: [maalgruppeId], references: [id], onDelete: SetNull)
+  sekvenser    ProspektSekvens[]
+  oppgaver     Oppgave[]
+  avtaler      Avtale[]
+
+  @@unique([organisasjonId, maalgruppeId])
+  @@index([status])
+  @@index([nesteHandling])
+}
+
+enum KundeStatus {
+  AKTIV
+  PAUSET
+  AVSLUTTET
+  TIDLIGERE
+}
+
+/// En organisasjon vi har solgt til. Brukes også som sperregrunnlag.
+model Kundeforhold {
+  id            String   @id @default(cuid())
+  organisasjonId String
+  kundeStatus   KundeStatus @default(AKTIV)
+  kundenummer   String?  @unique
+  kundeSiden    DateTime?
+  avsluttetDato DateTime?
+  notat         String?
+  opprettet     DateTime @default(now())
+  oppdatert     DateTime @updatedAt
+
+  organisasjon Organisasjon @relation(fields: [organisasjonId], references: [id], onDelete: Cascade)
+  avtaler      Avtale[]
+
+  @@index([organisasjonId])
+  @@index([kundeStatus])
+}
+
+enum DialogRetning {
+  UT
+  INN
+  INTERN
+}
+
+enum MeldingStatus {
+  UTKAST
+  VENTER_GODKJENNING
+  GODKJENT
+  SENDT
+  LEVERT
+  BOUNCET
+  AVVIST
+  FEILET
+}
+
+/// En samtale med en kontakt. Meldingene ligger i DialogMelding.
+model Dialog {
+  id          String   @id @default(cuid())
+  kontaktId   String?
+  emne        String
+  kanal       Kanal    @default(EPOST)
+  aktiv       Boolean  @default(true)
+  sisteAktivitet DateTime @default(now())
+  /// Bøtte 2: agenten klassifiserer. Systemet lagrer kategorien fra en lukket liste.
+  klassifisering String?
+  opprettet   DateTime @default(now())
+  oppdatert   DateTime @updatedAt
+
+  kontakt  Kontakt?        @relation(fields: [kontaktId], references: [id], onDelete: SetNull)
+  meldinger DialogMelding[]
+
+  @@index([kontaktId])
+  @@index([aktiv])
+}
+
+model DialogMelding {
+  id        String   @id @default(cuid())
+  dialogId  String
+  retning   DialogRetning
+  kanal     Kanal
+  emne      String?
+  tekst     String
+  status    MeldingStatus @default(UTKAST)
+  sendtTid  DateTime?
+  eksternId String?
+  feilmelding String?
+  opprettet DateTime @default(now())
+  oppdatert DateTime @updatedAt
+
+  dialog      Dialog       @relation(fields: [dialogId], references: [id], onDelete: Cascade)
+  godkjenning Godkjenning?
+  revisjoner  Revisjon[]
+  utsendinger Utsending[]
+
+  @@index([dialogId])
+  @@index([status])
+}
+
+enum PrisEnhet {
+  ENGANG
+  PER_MANED
+  PER_SAK
+  PER_BRUKER
+  PER_TIME
+}
+
+/// Det vi selger. SKU og pris er påkrevd.
+model Produkt {
+  id          String   @id @default(cuid())
+  sku         String   @unique
+  navn        String
+  beskrivelse String?
+  prisOre     Int
+  valuta      String   @default("NOK")
+  enhet       PrisEnhet @default(PER_MANED)
+  aktiv       Boolean  @default(true)
+  opprettet   DateTime @default(now())
+  oppdatert   DateTime @updatedAt
+
+  avtaler Avtale[]
+
+  @@index([aktiv])
+}
+
+enum AvtaleStatus {
+  UTKAST
+  SENDT
+  FORHANDLET
+  SIGNERT
+  AKTIV
+  AVSLUTTET
+  AVVIST
+}
+
+/// En avtale med en kunde.
+model Avtale {
+  id            String   @id @default(cuid())
+  tittel        String
+  organisasjonId String
+  kundeId       String?
+  prospektId    String?
+  produktId     String?
+  beloepOre     Int?
+  status        AvtaleStatus @default(UTKAST)
+  signertDato   DateTime?
+  startDato     DateTime?
+  sluttDato     DateTime?
+  notat         String?
+  opprettet     DateTime @default(now())
+  oppdatert     DateTime @updatedAt
+
+  organisasjon Organisasjon  @relation(fields: [organisasjonId], references: [id], onDelete: Cascade)
+  kunde        Kundeforhold? @relation(fields: [kundeId], references: [id], onDelete: SetNull)
+  prospekt     Prospekt?     @relation(fields: [prospektId], references: [id], onDelete: SetNull)
+  produkt      Produkt?      @relation(fields: [produktId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([organisasjonId])
+}
+
+enum OppgaveStatus {
+  AAPEN
+  PAAGAAR
+  FULLFOERT
+  AVBRUTT
+}
+
+enum OppgavePrioritet {
+  LAV
+  NORMAL
+  HOY
+}
+
+model Oppgave {
+  id          String   @id @default(cuid())
+  tittel      String
+  beskrivelse String?
+  status      OppgaveStatus @default(AAPEN)
+  prioritet   OppgavePrioritet @default(NORMAL)
+  forfaller   DateTime?
+  kontaktId   String?
+  prospektId  String?
+  tildeltBrukerId String?
+  fullfoertTid DateTime?
+  opprettet   DateTime @default(now())
+  oppdatert   DateTime @updatedAt
+
+  kontakt Kontakt?  @relation(fields: [kontaktId], references: [id], onDelete: SetNull)
+  prospekt Prospekt? @relation(fields: [prospektId], references: [id], onDelete: SetNull)
+  tildeltBruker Bruker? @relation(fields: [tildeltBrukerId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([forfaller])
+}
+
+// ===========================================================================
+// Modul 2 — Sperrelister
+// ===========================================================================
+
+enum SperreType {
+  GLOBAL
+  KANAL
+  KONTAKT
+  ORGANISASJON
+  EPOSTDOMENE
+}
+
+enum SperreGrunn {
+  AVMELDING
+  BOUNCE
+  KLAGE
+  EKSISTERENDE_KUNDE
+  AKTIV_DIALOG
+  MANUELL
+  KONKURS
+  OFFENTLIG_SEKTOR
+  RESERVASJON
+}
+
+/// Sjekkes i det øyeblikket noe skal sendes. Ikke i en prompt.
+model Sperreliste {
+  id             String   @id @default(cuid())
+  type           SperreType
+  grunn          SperreGrunn
+  /// Satt for type GLOBAL og KANAL.
+  epost          String?
+  epostDomene    String?
+  /// Satt for type KONTAKT.
+  kontaktId      String?
+  /// Satt for type ORGANISASJON.
+  organisasjonId String?
+  /// Satt for type KANAL. Null betyr alle kanaler.
+  kanal          Kanal?
+  aktiv          Boolean  @default(true)
+  notat          String?
+  kilde          String?
+  opprettetAv    String?
+  utloeper       DateTime?
+  opprettet      DateTime @default(now())
+  oppdatert      DateTime @updatedAt
+
+  kontakt      Kontakt?      @relation(fields: [kontaktId], references: [id], onDelete: Cascade)
+  organisasjon Organisasjon? @relation(fields: [organisasjonId], references: [id], onDelete: Cascade)
+
+  @@index([epost])
+  @@index([epostDomene])
+  @@index([kontaktId])
+  @@index([organisasjonId])
+  @@index([aktiv, type])
+}
+
+// ===========================================================================
+// Modul 3 — Enhetsregister-pipeline og målgruppe
+// ===========================================================================
+
+/// Hvem vi leter etter. Dette er konfigurasjon, ikke kode. Se B-005.
+model Maalgruppe {
+  id            String   @id @default(cuid())
+  navn          String   @unique
+  beskrivelse   String?
+  aktiv         Boolean  @default(true)
+  /// NACE-koder. Tom liste betyr «alle».
+  naeringskoder String[]
+  /// Fylker. Tom liste betyr «alle».
+  fylker        String[]
+  minAnsatte    Int?
+  maxAnsatte    Int?
+  /// Roller vi vil treffe, f.eks. «Daglig leder».
+  roller        String[]
+  /// Alltid true i praksis. Offentlig sektor skal ut. Se B-006.
+  ekskluderOffentlig Boolean @default(true)
+  ekskluderKonkurs   Boolean @default(true)
+  ekskluderUnderAvvikling Boolean @default(true)
+  /// Minimumsalder på selskapet i måneder.
+  minAlderMaaneder Int?
+  prioritet     Int      @default(0)
+  sisteKjoering DateTime?
+  opprettet     DateTime @default(now())
+  oppdatert     DateTime @updatedAt
+
+  prospekter Prospekt[]
+
+  @@index([aktiv])
+}
+
+enum KjoeringStatus {
+  KJORER
+  FULLFOERT
+  FEILET
+  TORRKJORT
+}
+
+/// Sporbarhet for hver kjøring av pipelinen.
+model PipelineKjoering {
+  id            String   @id @default(cuid())
+  maalgruppeId  String?
+  status        KjoeringStatus @default(KJORER)
+  torrkjoering  Boolean  @default(false)
+  hentet        Int      @default(0)
+  normalisert   Int      @default(0)
+  filtrertBort  Int      @default(0)
+  opprettet     Int      @default(0)
+  oppdatert     Int      @default(0)
+  feil          Int      @default(0)
+  feilmelding   String?
+  startet       DateTime @default(now())
+  avsluttet     DateTime?
+  varighetMs    Int?
+  detaljer      Json?
+
+  @@index([startet])
+}
+
+// ===========================================================================
+// Modul 4 — Utsendingsvakt
+// ===========================================================================
+
+/// Én rad per kanal. utgaaendeAktivert er false fra første migrasjon.
+model KanalInnstilling {
+  id                 String   @id @default(cuid())
+  kanal              Kanal    @unique
+  utgaaendeAktivert  Boolean  @default(false)
+  /// Maks meldinger per dag per avsender.
+  maksPerDag         Int      @default(0)
+  /// Maks meldinger per uke per avsender.
+  maksPerUke         Int      @default(0)
+  /// Maks per minutt, for aa skaane mottaker.
+  maksPerMinutt      Int      @default(0)
+  /// Vinduer i lokal tid, f.eks. «08:00-16:00».
+  tidsvinduStart     String   @default("08:00")
+  tidsvinduSlutt     String   @default("16:00")
+  kunHverdager       Boolean  @default(true)
+  /// Land for rode dager.
+  helligdagLand      String   @default("NO")
+  oppvarmingAktiv    Boolean  @default(true)
+  oppvarmingStartDato DateTime?
+  notat              String?
+  oppdatertAv        String?
+  opprettet          DateTime @default(now())
+  oppdatert          DateTime @updatedAt
+}
+
+enum AvsenderStatus {
+  OPPVARMING
+  AKTIV
+  PAUSET
+  SPERRET
+}
+
+model Avsender {
+  id             String   @id @default(cuid())
+  epost          String   @unique
+  navn           String?
+  domene         String
+  status         AvsenderStatus @default(OPPVARMING)
+  maksPerDag     Int      @default(10)
+  maksPerUke     Int      @default(50)
+  sendtIDag      Int      @default(0)
+  sendtDenneUken Int      @default(0)
+  dognDato       DateTime?
+  ukeDato        DateTime?
+  /// Siste feilrate i prosent. Hoy feilrate pauser avsenderen.
+  feilrateSiste  Int      @default(0)
+  notat          String?
+  opprettet      DateTime @default(now())
+  oppdatert      DateTime @updatedAt
+
+  utsendinger Utsending[]
+
+  @@index([domene])
+  @@index([status])
+}
+
+/// Oppvarmingsplan: kvoten vokser over tid. Data, ikke kode.
+model Oppvarmingssteg {
+  id          String   @id @default(cuid())
+  avsenderId  String?
+  dagFraStart Int      @unique
+  maksPerDag  Int
+  beskrivelse String?
+  opprettet   DateTime @default(now())
+
+  @@index([dagFraStart])
+}
+
+/// Idempotensnokkel. Samme melding skal aldri kunne sendes to ganger.
+model Utsending {
+  id             String   @id @default(cuid())
+  idempotensNokkel String @unique
+  kanal          Kanal
+  avsenderId     String?
+  kontaktId      String?
+  organisasjonId String?
+  dialogMeldingId String?
+  sekvensStegId  String?
+  status         MeldingStatus @default(UTKAST)
+  planlagtTid    DateTime?
+  sendtTid       DateTime?
+  eksternId      String?
+  feilmelding    String?
+  torrkjoering   Boolean  @default(false)
+  forsok         Int      @default(0)
+  opprettet      DateTime @default(now())
+  oppdatert      DateTime @updatedAt
+
+  avsender      Avsender?      @relation(fields: [avsenderId], references: [id], onDelete: SetNull)
+  dialogMelding DialogMelding? @relation(fields: [dialogMeldingId], references: [id], onDelete: SetNull)
+  sekvensSteg   SekvensSteg?   @relation(fields: [sekvensStegId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([planlagtTid])
+  @@index([kanal])
+}
+
+/// Norske rode dager. Beregnes og lagres, sa vi ikke gjetter i koden.
+model Helligdag {
+  id        String   @id @default(cuid())
+  dato      DateTime @unique
+  navn      String
+  land      String   @default("NO")
+  opprettet DateTime @default(now())
+
+  @@index([dato])
+}
+
+// ===========================================================================
+// Modul 5 — Sekvensmotor
+// ===========================================================================
+
+/// Sekvenser er data, ikke kode. De kan endres og males.
+model Sekvens {
+  id          String   @id @default(cuid())
+  navn        String   @unique
+  beskrivelse String?
+  aktiv       Boolean  @default(true)
+  /// Nyeste versjon. Gamle versjoner beholdes for historikk.
+  versjon     Int      @default(1)
+  opprettet   DateTime @default(now())
+  oppdatert   DateTime @updatedAt
+
+  versjoner SekvensVersjon[]
+}
+
+model SekvensVersjon {
+  id         String   @id @default(cuid())
+  sekvensId  String
+  versjon    Int
+  aktiv      Boolean  @default(false)
+  notat      String?
+  opprettet  DateTime @default(now())
+
+  sekvens Sekvens       @relation(fields: [sekvensId], references: [id], onDelete: Cascade)
+  steg    SekvensSteg[]
+  lop    ProspektSekvens[]
+
+  @@unique([sekvensId, versjon])
+  @@index([aktiv])
+}
+
+enum StegType {
+  EPOST
+  OPPGAVE
+  VENT
+  AVSLUTT
+}
+
+/// Ett steg i en sekvens. ventetidTimer er deterministisk — agenten kan ikke
+/// velge aa vente kortere.
+model SekvensSteg {
+  id             String   @id @default(cuid())
+  versjonId      String
+  rekkefolge     Int
+  type           StegType @default(EPOST)
+  navn           String
+  /// Ventetid fra forrige steg, i timer.
+  ventetidTimer  Int      @default(0)
+  kanal          Kanal    @default(EPOST)
+  /// Mal for utkastet. Selve ordlyden skriver agenten senere (boette 2).
+  emneMal        String?
+  innholdMal     String?
+  /// Avslutningsregel: stopp sekvensen hvis dette inntreffer for dette steget.
+  avsluttVedSvar Boolean  @default(true)
+  aktiv          Boolean  @default(true)
+  opprettet      DateTime @default(now())
+  oppdatert      DateTime @updatedAt
+
+  versjon     SekvensVersjon @relation(fields: [versjonId], references: [id], onDelete: Cascade)
+  kjoeringer  StegKjoering[]
+  utsendinger Utsending[]
+
+  @@unique([versjonId, rekkefolge])
+  @@index([versjonId])
+}
+
+enum SekvensStatus {
+  AKTIV
+  PAUSET
+  FULLFOERT
+  AVSLUTTET
+  AVBRUTT
+}
+
+/// En kjoring av en sekvens for ett prospekt.
+model ProspektSekvens {
+  id          String   @id @default(cuid())
+  prospektId  String
+  versjonId   String
+  status      SekvensStatus @default(AKTIV)
+  startet     DateTime @default(now())
+  nesteStegTid DateTime?
+  avsluttet   DateTime?
+  avsluttGrunn String?
+  oppdatert   DateTime @updatedAt
+
+  prospekt Prospekt        @relation(fields: [prospektId], references: [id], onDelete: Cascade)
+  versjon  SekvensVersjon  @relation(fields: [versjonId], references: [id], onDelete: Restrict)
+  steg     StegKjoering[]
+
+  @@index([status])
+  @@index([nesteStegTid])
+}
+
+enum StegStatus {
+  VENTER
+  KLAR
+  UTKAST_LAGET
+  VENTER_GODKJENNING
+  SENDT
+  HOPPET_OVER
+  AVBRUTT
+  FEILET
+}
+
+model StegKjoering {
+  id                String   @id @default(cuid())
+  prospektSekvensId String
+  stegId            String
+  status            StegStatus @default(VENTER)
+  planlagtTid       DateTime?
+  utfortTid         DateTime?
+  torrkjoering      Boolean  @default(false)
+  resultat          String?
+  feilmelding       String?
+  opprettet         DateTime @default(now())
+  oppdatert         DateTime @updatedAt
+
+  prospektSekvens ProspektSekvens @relation(fields: [prospektSekvensId], references: [id], onDelete: Cascade)
+  steg            SekvensSteg     @relation(fields: [stegId], references: [id], onDelete: Restrict)
+
+  @@unique([prospektSekvensId, stegId])
+  @@index([status])
+  @@index([planlagtTid])
+}
+
+// ===========================================================================
+// Modul 6 — Godkjenningskø
+// ===========================================================================
+
+enum GodkjenningStatus {
+  VENTER
+  GODKJENT
+  AVVIST
+  UTLOPT
+}
+
+enum GodkjenningType {
+  UTKAST
+  UTSENDING
+  ENDRING
+  IMPORT
+  ANNET
+}
+
+/// Alt med ekstern konsekvens går gjennom denne. Ingen omvei.
+model Godkjenning {
+  id             String   @id @default(cuid())
+  type           GodkjenningType @default(UTKAST)
+  status         GodkjenningStatus @default(VENTER)
+  tittel         String
+  begrunnelse    String?
+  /// Hva godkjenningen gjelder, som fritekst eller JSON.
+  gjelder        String?
+  kanal          Kanal?
+  kontaktId      String?
+  organisasjonId String?
+  dialogMeldingId String? @unique
+  risiko         String?
+  forslagFra     String   @default("SYSTEMET")
+  opprettet      DateTime @default(now())
+  oppdatert      DateTime @updatedAt
+
+  dialogMelding DialogMelding? @relation(fields: [dialogMeldingId], references: [id], onDelete: Cascade)
+  beslutninger  Godkjenningsbeslutning[]
+
+  @@index([status])
+  @@index([type])
+  @@index([opprettet])
+}
+
+/// Hvem godkjente hva, og når.
+model Godkjenningsbeslutning {
+  id            String   @id @default(cuid())
+  godkjenningId String
+  brukerId      String?
+  brukerEpost   String?
+  status        GodkjenningStatus
+  kommentar     String?
+  opprettet     DateTime @default(now())
+
+  godkjenning Godkjenning @relation(fields: [godkjenningId], references: [id], onDelete: Cascade)
+  bruker      Bruker?     @relation(fields: [brukerId], references: [id], onDelete: SetNull)
+
+  @@index([godkjenningId])
+}
+
+// ===========================================================================
+// Modul 7 — Revisjonslogg (uforanderlig)
+// ===========================================================================
+
+/// Hver utgaaende handling med grunnlag, tidspunkt, resultat og kilde.
+/// Det finnes ingen oppdaterings- eller slettefunksjon for denne tabellen.
+model Revisjon {
+  id           String   @id @default(cuid())
+  handling     String
+  aktor        String
+  aktorType    String   @default("SYSTEMET")
+  entitet      String?
+  entitetId    String?
+  kanal        Kanal?
+  grunnlag     String?
+  resultat     String?
+  resultatStatus String?
+  kilde        String?
+  ip           String?
+  brukerAgent  String?
+  metadata     Json?
+  korrelasjonId String?
+  opprettet    DateTime @default(now())
+
+  dialogMeldingId String?
+
+  dialogMelding DialogMelding? @relation(fields: [dialogMeldingId], references: [id], onDelete: SetNull)
+
+  @@index([opprettet])
+  @@index([handling])
+  @@index([aktor])
+  @@index([korrelasjonId])
+  @@index([entitet, entitetId])
+}
+
+// ===========================================================================
+// Modul 8 — Tidsplan (cron)
+// ===========================================================================
+
+/// Hver cron-jobb som egen rute med egen hemmelighet, torrkjoeringsmodus og logg.
+model CronJobb {
+  id            String   @id @default(cuid())
+  navn          String   @unique
+  beskrivelse   String?
+  sti           String
+  cronUttrykk   String
+  aktiv         Boolean  @default(true)
+  torrkjoeringStandard Boolean @default(true)
+  /// Navn paa miljoenvariabelen som holder hemmeligheten. Aldri verdien.
+  hemmelighetNavn String
+  sisteKjoering DateTime?
+  sisteStatus   KjoeringStatus?
+  sisteFeil     String?
+  antallKjoeringer Int   @default(0)
+  antallFeil    Int      @default(0)
+  opprettet     DateTime @default(now())
+  oppdatert     DateTime @updatedAt
+
+  kjoeringer CronKjoering[]
+
+  @@index([aktiv])
+}
+
+model CronKjoering {
+  id          String   @id @default(cuid())
+  cronJobbId  String?
+  navn        String
+  status      KjoeringStatus @default(KJORER)
+  torrkjoering Boolean @default(false)
+  startet     DateTime @default(now())
+  avsluttet   DateTime?
+  varighetMs  Int?
+  antallUtfort Int     @default(0)
+  antallFeil  Int      @default(0)
+  melding     String?
+  detaljer    Json?
+  /** Satt naar jobben feiler. Feiler en jobb, skal den si det — ikke tie. */
+  feilmelding String?
+
+  cronJobb CronJobb? @relation(fields: [cronJobbId], references: [id], onDelete: SetNull)
+
+  @@index([navn])
+  @@index([startet])
+  @@index([status])
+}
+
+// ===========================================================================
+// Idempotens for innkommende hendelser
+// ===========================================================================
+
+model RaHendelse {
+  id           String   @id @default(cuid())
+  idempotensNokkel String @unique
+  kilde        String
+  type         String?
+  payload      Json?
+  behandlet    Boolean  @default(false)
+  behandletTid DateTime?
+  feilmelding  String?
+  opprettet    DateTime @default(now())
+
+  @@index([kilde])
+  @@index([behandlet])
+}
+
+// ===========================================================================
+// Brukere og innlogging
+// ===========================================================================
+
+model Bruker {
+  id            String   @id @default(cuid())
+  epost         String   @unique
+  navn          String
+  passordHash   String
+  passordSalt   String
+  rolle         String   @default("BRUKER")
+  aktiv         Boolean  @default(true)
+  sistInnlogget DateTime?
+  opprettet     DateTime @default(now())
+  oppdatert     DateTime @updatedAt
+
+  okter       Sesjon[]
+  oppgaver    Oppgave[]
+  beslutninger Godkjenningsbeslutning[]
+
+  @@index([epost])
+}
+
+model Sesjon {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  brukerId  String
+  utloeper  DateTime
+  ip        String?
+  brukerAgent String?
+  opprettet DateTime @default(now())
+
+  bruker Bruker @relation(fields: [brukerId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([utloeper])
+}
+
+// ===========================================================================
+// Integrasjonsstatus — aerlig «ikke konfigurert»
+// ===========================================================================
+
+/// Hver integrasjon har en aerlig tilstand. Mangler en nokkel, sier systemet det
+/// tydelig og fortsetter aa virke. Det finnes ingen kodevei som finner paa data.
+model Integrasjon {
+  id            String   @id @default(cuid())
+  navn          String   @unique
+  beskrivelse   String?
+  konfigurert   Boolean  @default(false)
+  /// Navnene paa miljoenvariablene som mangler. Aldri verdiene.
+  manglendeNokler String[]
+  sistSjekket   DateTime?
+  sisteFeil     String?
+  opprettet     DateTime @default(now())
+  oppdatert     DateTime @updatedAt
+}

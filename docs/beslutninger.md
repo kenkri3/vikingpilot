@@ -1,0 +1,211 @@
+# Beslutningsregister
+
+Hver beslutning har et nummer, en dato, en begrunnelse og en status. Når en beslutning
+endres, skrives den **ikke** om — det legges til en ny rad som opphever den gamle. På den
+måten kan neste økt se hva vi visste da vi valgte.
+
+Datoene er ført i den rekkefølgen arbeidet faktisk skjedde.
+
+---
+
+## B-001 — Systemet har ikke eget domene
+
+**Dato:** fase 0
+**Beslutning:** VikingPilot kjører på Railway-URL-en. Eget domene bygges ikke.
+**Begrunnelse:** Systemet er internt. Et domene ville vært et ekstra angrepspunkt og et
+ekstra vedlikeholdsansvar uten forretningsverdi.
+**Status:** gjeldende.
+
+---
+
+## B-002 — Agentplattformen navngis aldri
+
+**Dato:** fase 0
+**Beslutning:** Agentplattformen omtales som «agentplattformen» eller «agenten» — i kode,
+dokumentasjon, kommentarer og commit-meldinger. Aldri ved produktnavn.
+**Begrunnelse:** Plattformen er hvitmerket og skal fremstå som vår egen merkevare.
+**Konsekvens for kode:** ingen importer, ingen avhengigheter, ingen miljøvariabler og
+ingen kommentarer som røper leverandøren. Integrasjonen skjer over MCP og webhook, som er
+åpne protokoller, og omtales som nettopp det.
+**Status:** gjeldende.
+
+---
+
+## B-003 — Alle guardrails er tjenestefunksjoner med HTTP-ruter
+
+**Dato:** fase 0
+**Beslutning:** Ingen guardrail bygges som en del av en agent-prompt. Alle bygges som
+vanlige funksjoner i `src/lib/`, med en tynn rute i `src/app/api/` rundt.
+**Begrunnelse:** Arkitekturregelen. En regel i en prompt kan snakkes rundt; en regel i en
+database kan ikke. I tillegg kan en senere økt pakke funksjonene inn som MCP-verktøy uten
+å skrive dem om.
+**Status:** gjeldende.
+
+---
+
+## B-004 — Utgående trafikk er av som standard, per kanal
+
+**Dato:** fase 0
+**Beslutning:** Hver kanal har en egen rad i `KanalInnstilling` med `utgaaendeAktivert =
+false` fra første migrasjon. Ingenting sendes eller endres eksternt før Kenneth eller
+Fredrik slår det på for den kanalen.
+**Begrunnelse:** Krav til «100 % ferdig», punkt 3. Et system som kan sende ved et uhell er
+farligere enn et system som ikke kan sende.
+**Konsekvens:** `KanalInnstilling` opprettes med frødata der alle kanaler er av. Det finnes
+ingen kodevei som setter den til `true` automatisk.
+**Status:** gjeldende.
+
+---
+
+## B-005 — Målgruppen er data, ikke kode
+
+**Dato:** fase 0
+**Beslutning:** Bransje, fylke, størrelse og rolle ligger i tabellen `Maalgruppe`.
+**Begrunnelse:** Kenneth og Fredrik skal kunne endre hvem vi leter etter uten at noen
+skriver kode. Se `docs/spesifikasjon.md` avsnitt 5.
+**Status:** gjeldende.
+
+---
+
+## B-006 — Offentlig sektor og sperrede selskaper filtreres alltid bort
+
+**Dato:** fase 0
+**Beslutning:** Filteret ligger i `src/lib/enhetsregister/filter.ts` og kan ikke slås av
+fra dashbordet eller fra en konfigurasjonsrad. Det er ikke en innstilling.
+**Begrunnelse:** Oppdragsbeskrivelsen: «Offentlig sektor og sperrede selskaper ut, alltid.»
+**Status:** gjeldende.
+
+---
+
+## B-007 — Revisjonsloggen er uforanderlig
+
+**Dato:** fase 0
+**Beslutning:** `Revisjon` har ingen oppdaterings- eller sletteoperasjon. Verken i
+Prisma-klienten slik den brukes i koden, eller i noen rute.
+**Begrunnelse:** En logg som kan endres er ikke et bevis.
+**Merknad:** Dette håndheves i applikasjonslaget. Det er **ikke** håndhevet med
+databasetrigger. Det er en kjent begrensning og står i `docs/status.md`.
+**Status:** gjeldende.
+
+---
+
+## B-008 — Innlogging: e-post og passord i databasen
+
+**Dato:** fase 0 (valgt av Kenneth)
+**Beslutning:** Innlogging med e-post og passord, `scrypt` fra Nodes innebygde `crypto`,
+og en signert cookie med `HMAC-SHA256`. Ingen ekstern identitetstjeneste.
+**Begrunnelse:** Skal virke uten nettverk, og uten nye avhengigheter. Godkjenningskøen
+krever «hvem godkjente hva», så en felles passordvariabel er ikke godt nok.
+**Alternativer som ble vurdert:** felles passord fra miljøvariabel (svekker
+revisjonskravet), ingen innlogging (åpner dashbordet for alle med Railway-URL-en).
+**Status:** gjeldende.
+
+---
+
+## B-009 — Tester: Nodes innebygde testkjører
+
+**Dato:** fase 0 (valgt av Kenneth)
+**Beslutning:** `node --test`. Ingen Vitest, ingen Biome, ingen nye avhengigheter for
+testing eller formatering.
+**Begrunnelse:** Færrest mulig bevegelige deler. Skal kunne kjøre offline.
+**Status:** gjeldende.
+
+---
+
+## B-010 — Postgres som Windows-tjeneste
+
+**Dato:** fase 0 (valgt av Kenneth)
+**Beslutning:** PostgreSQL 17.6 fra EnterpriseDBs offisielle binærfiler, registrert som
+Windows-tjeneste med `pg_ctl register`.
+**Begrunnelse:** Samme motor som Railway. Ingen Docker-avhengighet.
+**Forbehold:** Registrering av en tjeneste krever forhøyede rettigheter. Denne økten
+kjørte uten admin, så tjenesten er ikke registrert ennå. Se `docs/manuell-oppsett.md`.
+**Status:** gjeldende, ikke utført.
+
+---
+
+## B-011 — Byggerot er lokal NTFS, ikke Google Drive
+
+**Dato:** fase 0
+**Beslutning:** Arbeidskopien ligger på `C:\VikingPilot`. Kildekoden speiles til
+`G:\Min disk\GitHub\Vikingpilot` med `robocopy`, og `node_modules`, `.next` og `.tools`
+utelates.
+**Begrunnelse:** `G:` er Google Drive for Desktop (`DriveType 3`, FAT32). Verifisert i
+denne økten: `npm install ms@2.1.3` rapporterte suksess, men **hver fil den skrev var
+0 byte**. `create-next-app` feilet med `EBADF`. `mklink /J` svarte «Local NTFS volumes are
+required». En 330 MB nedlasting skrev 0 byte og avbrøt etter 17 minutter.
+**Konsekvens:** Ingen bygging, testing eller pakkeinstallasjon kan skje på `G:`.
+**Status:** gjeldende. **Avviker fra oppdragets oppgitte sti** — se `LAGT-TIL-GRUNN.md`.
+
+---
+
+## B-012 — Kenneth og Fredrik godkjenner, agenten foreslår
+
+**Dato:** fase 0
+**Beslutning:** Godkjenningskøen har to menneskelige godkjennere. Agenten kan legge inn
+forslag, men kan ikke godkjenne. En godkjenning registrerer hvem og når.
+**Begrunnelse:** Arkitekturregelen: alt med ekstern konsekvens går gjennom køen.
+**Status:** gjeldende.
+
+---
+
+## B-013 — Prisma pinnet til 7.10.0, ikke `latest`
+
+**Dato:** fase 1
+**Beslutning:** `prisma` og `@prisma/client` pinnes eksakt til `7.10.0`.
+**Begrunnelse:** `npm view prisma dist-tags` viste at `latest` peker på `8.0.0-rc.19` — en
+release candidate — mens `@prisma/client` sto på stabile `7.10.0`. Å installere uten
+pinning ga en blanding av en RC og en stabil utgave, med en motstridende
+peer-avhengighet (`@prisma/cli-engine`). Et fundament skal ikke være en kandidat.
+**Konsekvens:** oppgradering til Prisma 8 er en egen, bevisst handling — ikke noe som
+skjer av seg selv ved neste `npm install`.
+**Status:** gjeldende.
+
+---
+
+## B-014 — Prisma 7s oppsett: `prisma.config.ts` og driver-adapter
+
+**Dato:** fase 1
+**Beslutning:** Tilkoblingsadressen ligger i `prisma.config.ts`. Applikasjonen kobler til
+via `PrismaPg`-adapteren i `src/lib/db.ts`. Klienten genereres til
+`src/generated/prisma` og er utelatt fra git.
+**Begrunnelse:** Prisma 7 fjernet `url` fra `datasource` og krever `output` i
+generatoren. `prisma validate` svarte `P1012: The datasource property 'url' is no longer
+supported in schema files` inntil dette var endret.
+**Konsekvens:** `src/lib/db.ts` er det eneste stedet som åpner en databaseforbindelse.
+**Status:** gjeldende.
+
+---
+
+## B-015 — Ingen nettavhengige fonter
+
+**Dato:** fase 1
+**Beslutning:** `next/font/google` er fjernet. Vi bruker systemfonter.
+**Begrunnelse:** `next/font/google` henter fonter over nett under bygging. Det bryter
+kravet om at systemet skal kunne bygges og demonstreres uten nettverk
+(`docs/stoppkriterier.md`, kriterium 3).
+**Status:** gjeldende.
+
+---
+
+## B-016 — VikingPilot bruker port 3100 lokalt
+
+**Dato:** fase 1
+**Beslutning:** Lokal kjøring bruker port 3100. På Railway settes `PORT` av Railway.
+**Begrunnelse:** Port 3000 på denne maskinen er opptatt av et annet prosjekt
+(Tønsberglivet, kjørt fra OneDrive). Det prosjektet ble ikke rørt. Se
+`docs/status.md` F-005.
+**Status:** gjeldende.
+
+---
+
+## B-017 — Revisjon skrives, men håndheves ikke av databasen
+
+**Dato:** fase 1
+**Beslutning:** Uforanderligheten til `Revisjon` håndheves i applikasjonslaget: det finnes
+ingen oppdaterings- eller slettefunksjon. Det legges **ikke** inn en databasetrigger nå.
+**Begrunnelse:** En trigger er en destruktiv endring å rulle tilbake, og den krever en
+migrasjon som er vanskelig å reversere. Applikasjonslaget dekker behovet i denne fasen.
+**Kjent svakhet:** noen med direkte databasetilgang kan endre loggen. Det står i
+`docs/status.md` som F-003, alvor MIDDELS.
+**Status:** gjeldende, med kjent svakhet.
