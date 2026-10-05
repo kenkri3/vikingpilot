@@ -512,7 +512,12 @@ describe("sekvensmotoren", { skip: !harDatabase ? "DATABASE_URL mangler" : false
 
   test("BRUDD: kanalen er stengt, så ingenting kan gå ut uansett", async () => {
     const { kanSende } = await import("@/lib/guards/automatisk");
-    const svar = await kanSende({ kanal: "EPOST", epost: "sekvens@sekvens.invalid", kontaktId });
+    const svar = await kanSende({
+      kanal: "EPOST",
+      epost: "sekvens@sekvens.invalid",
+      kontaktId,
+      avsenderId: "finnes-ikke",
+    });
 
     assert.equal(svar.tillatt, false, "EPOST-kanalen var åpen — den skal være av");
   });
@@ -536,6 +541,12 @@ describe("sekvensmotoren", { skip: !harDatabase ? "DATABASE_URL mangler" : false
     await prisma.prospektSekvens.deleteMany({
       where: { prospekt: { organisasjonId: orgId } },
     });
+
+    // Rydd også bort utsendinger som henger på denne organisasjonens kontakter,
+    // slik at vi måler våre egne rader og ikke naboens. Testfilene kjører
+    // samtidig, og et globalt antall ville vært et kappløp.
+    await prisma.utsending.deleteMany({ where: { organisasjonId: orgId } });
+
     await prisma.prospekt.deleteMany({ where: { organisasjonId: orgId } });
 
     await lagSekvenskjoering(new Date(Date.UTC(2026, 5, 1, 8)));
@@ -558,9 +569,11 @@ describe("sekvensmotoren", { skip: !harDatabase ? "DATABASE_URL mangler" : false
       "antall meldinger stemmer ikke med antall utkast",
     );
 
-    // Fortsatt ingen utsendinger.
-    const sendte = await prisma.utsending.count({ where: { status: "SENDT" } });
-    assert.equal(sendte, 0, "noe ble sendt");
+    // Sekvensmotoren skal ikke ha sendt noe for DENNE organisasjonen.
+    const sendte = await prisma.utsending.count({
+      where: { status: "SENDT", organisasjonId: orgId },
+    });
+    assert.equal(sendte, 0, "sekvensmotoren sendte noe — den skal bare lage utkast");
   });
 
   test("sekvensen hopper over prospekt uten kontakt", async () => {

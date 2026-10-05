@@ -113,13 +113,42 @@ export async function sendMelding(
     };
   }
 
-  // 3. Guardrails.
+  // 3. Har vi en avsender? Uten den kan ikke kvotene håndheves, og da sendes
+  //    ingenting. Vi nekter tidlig med en tydelig melding i stedet for å la
+  //    kanSende oppdage det.
+  if (!valg.avsenderId) {
+    await skrivRevisjon({
+      handling: "UTSENDING_AVVIST",
+      aktor: "SYSTEMET",
+      aktorType: "SYSTEMET",
+      entitet: "DialogMelding",
+      entitetId: dialogMeldingId,
+      kanal: "EPOST",
+      grunnlag: "Ingen avsender er oppgitt.",
+      resultat: "Avvist: uten avsender kan ikke kvotene håndheves",
+      resultatStatus: "avvist",
+      kilde: "sekvens/utsending",
+    });
+
+    return {
+      dialogMeldingId,
+      utfall: "AVVIST_AV_GUARDRAIL",
+      grunn:
+        "Ingen avsender er oppgitt. Uten avsender kan ikke døgnkvote, ukekvote og " +
+        "oppvarming håndheves, og da sendes ingenting. Sett opp en avsender og " +
+        "oppgi den til utsendingsjobben.",
+    };
+  }
+
+  const avsenderId = valg.avsenderId;
+
+  // 4. Guardrails.
   const lov = await kanSende({
     kanal: "EPOST",
     epost: kontakt.epost,
     kontaktId: kontakt.id,
     organisasjonId: kontakt.organisasjonId,
-    avsenderId: valg.avsenderId ?? null,
+    avsenderId,
     naa,
   });
 

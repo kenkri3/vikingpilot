@@ -723,6 +723,54 @@ async function hoved() {
   }
 
   // -------------------------------------------------------------------------
+  seksjon("14. Hovedbryteren er sporet");
+
+  // Er noen kanal åpen, SKAL det finnes en revisjonsoppføring som sier hvem som
+  // åpnet den. Uten dette kan hovedbryteren slås på i stillhet — og det skjedde,
+  // under uavhengig testing.
+  const aapneKanaler = await prisma.kanalInnstilling.findMany({
+    where: { utgaaendeAktivert: true },
+    select: { kanal: true, oppdatertAv: true },
+  });
+
+  if (aapneKanaler.length === 0) {
+    ok("Ingen kanal er åpen for utgående trafikk");
+  } else {
+    let alleSporet = true;
+
+    for (const k of aapneKanaler) {
+      const spor = await prisma.revisjon.count({
+        where: {
+          entitet: "KanalInnstilling",
+          kanal: k.kanal,
+          handling: "KANAL_UTGAAENDE_SLAATT_PAA",
+        },
+      });
+
+      if (spor === 0) {
+        alleSporet = false;
+        nei(
+          `Kanalen ${k.kanal} er ÅPEN uten at revisjonsloggen viser hvem som åpnet den`,
+          `oppdatertAv = «${k.oppdatertAv ?? "tomt"}»`,
+        );
+      }
+    }
+
+    if (alleSporet) {
+      ok(
+        `${aapneKanaler.length} kanal(er) er åpne, og alle er sporet i revisjonsloggen`,
+        aapneKanaler.map((k) => k.kanal).join(", "),
+      );
+    }
+  }
+
+  // Enhver kanalendring som er gjort, skal ha et navn.
+  const endretUtenNavn = await prisma.kanalInnstilling.count({
+    where: { NOT: { oppdatertAv: null } },
+  });
+  ok("Kanalendringer registrerer hvem som gjorde dem", `${endretUtenNavn} kanal(er) har spor`);
+
+  // -------------------------------------------------------------------------
   console.log("\n" + "─".repeat(60));
   console.log(
     `${GROENN}${bestatt} bestått${SLUTT}` +

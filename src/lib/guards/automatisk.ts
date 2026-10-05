@@ -305,8 +305,18 @@ export async function kanSende(args: {
   epost?: string | null;
   kontaktId?: string | null;
   organisasjonId?: string | null;
-  /** Avsenderen. Er den oppgitt, sjekkes kvote og oppvarming også. */
-  avsenderId?: string | null;
+  /**
+   * Avsenderen. PÅKREVD.
+   *
+   * Første versjon hadde denne valgfri, og hoppet over kvote og oppvarming når
+   * den manglet. Den eneste kalleren i produksjon oppga den ikke — så
+   * «porten alle utsendelser må gjennom» var tre sjekker, ikke fem.
+   *
+   * Å utelate avsenderen er ikke en måte å slippe unna på. Er den ukjent,
+   * nekter vi. En guardrail som kan hoppes over ved å la være å oppgi et felt,
+   * er ingen guardrail.
+   */
+  avsenderId: string | null | undefined;
   /** Tidspunktet som skal vurderes. Settes av testene. */
   naa?: Date;
   /** Hopper over tidsvinduet. Brukes bare av tester som ikke gjelder vinduet. */
@@ -314,6 +324,24 @@ export async function kanSende(args: {
 }): Promise<SperreSvar & { sjekket: string[] }> {
   const naa = args.naa ?? new Date();
   const sjekket: string[] = [];
+
+  // 0. Vet vi hvem som sender? Uten det kan ikke kvotene håndheves, og da
+  //    slipper vi ikke gjennom. Vi nekter heller enn å sende uten grense.
+  sjekket.push("avsender");
+  if (!args.avsenderId) {
+    return {
+      tillatt: false,
+      grunn:
+        "Ingen avsender er oppgitt. Uten avsender kan ikke døgnkvote, ukekvote og " +
+        "oppvarming håndheves, og da sendes ingenting.",
+      type: null,
+      sperreGrunn: null,
+      sperreId: null,
+      sjekket,
+    };
+  }
+
+  const avsenderId = args.avsenderId;
 
   // 1. Kanalen.
   sjekket.push("kanal");
@@ -372,47 +400,45 @@ export async function kanSende(args: {
     }
   }
 
-  // 4. Volum og oppvarming, hvis vi vet hvem som sender.
-  if (args.avsenderId) {
-    sjekket.push("oppvarming");
-    const oppvarming = await sjekkOppvarming(args.avsenderId, naa);
+  // 4. Oppvarming og volum. Begge gjelder alltid, nå som avsenderen er påkrevd.
+  sjekket.push("oppvarming");
+  const oppvarming = await sjekkOppvarming(avsenderId, naa);
 
-    if (!oppvarming.tillatt) {
-      return {
-        tillatt: false,
-        grunn: oppvarming.grunn,
-        type: null,
-        sperreGrunn: null,
-        sperreId: null,
-        sjekket,
-      };
-    }
+  if (!oppvarming.tillatt) {
+    return {
+      tillatt: false,
+      grunn: oppvarming.grunn,
+      type: null,
+      sperreGrunn: null,
+      sperreId: null,
+      sjekket,
+    };
+  }
 
-    sjekket.push("volum");
-    const volum = await sjekkVolum(args.avsenderId, naa);
+  sjekket.push("volum");
+  const volum = await sjekkVolum(avsenderId, naa);
 
-    if (!volum.tillatt) {
-      return {
-        tillatt: false,
-        grunn: volum.grunn,
-        type: null,
-        sperreGrunn: null,
-        sperreId: null,
-        sjekket,
-      };
-    }
+  if (!volum.tillatt) {
+    return {
+      tillatt: false,
+      grunn: volum.grunn,
+      type: null,
+      sperreGrunn: null,
+      sperreId: null,
+      sjekket,
+    };
+  }
 
-    // Oppvarmingskvoten kan være lavere enn døgnkvoten. Begge skal gjelde.
-    if (!oppvarming.ferdigOppvarmet && volum.sendtIDag >= oppvarming.kvoteIDag) {
-      return {
-        tillatt: false,
-        grunn: `Oppvarmingskvoten er brukt opp: ${volum.sendtIDag} av ${oppvarming.kvoteIDag} på dag ${oppvarming.dag}.`,
-        type: null,
-        sperreGrunn: null,
-        sperreId: null,
-        sjekket,
-      };
-    }
+  // Oppvarmingskvoten kan være lavere enn døgnkvoten. Begge skal gjelde.
+  if (!oppvarming.ferdigOppvarmet && volum.sendtIDag >= oppvarming.kvoteIDag) {
+    return {
+      tillatt: false,
+      grunn: `Oppvarmingskvoten er brukt opp: ${volum.sendtIDag} av ${oppvarming.kvoteIDag} på dag ${oppvarming.dag}.`,
+      type: null,
+      sperreGrunn: null,
+      sperreId: null,
+      sjekket,
+    };
   }
 
   return {

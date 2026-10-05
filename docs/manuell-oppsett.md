@@ -274,16 +274,32 @@ Uten disse to starter ikke systemet. Det sier det tydelig i stedet for å feile 
 
 Hver rute har sin egen. Se B3.
 
-| Variabel | Jobb | Lokalt | Railway |
-|---|---|---|---|
-| `CRON_SECRET_ENHETSREGISTER` | Henter nye selskaper | ☐ | ☐ |
-| `CRON_SECRET_SEKVENS` | Kjører sekvensmotoren | ☐ | ☐ |
-| `CRON_SECRET_UTSENDING` | Sender godkjente meldinger | ☐ | ☐ |
-| `CRON_SECRET_OPPVARMING` | Justerer oppvarmingskvote | ☐ | ☐ |
-| `CRON_SECRET_RYDDING` | Rydder og arkiverer | ☐ | ☐ |
+| Variabel | Jobb | Rute | Lokalt | Railway |
+|---|---|---|---|---|
+| `CRON_SECRET_ENHETSREGISTER` | Henter nye selskaper fra Enhetsregisteret | `/api/cron/enhetsregister` | ☐ | ☐ |
+| `CRON_SECRET_SEKVENS` | Starter sekvenser og legger utkast i køen | `/api/cron/sekvens` | ☐ | ☐ |
+| `CRON_SECRET_UTSENDING` | Sender godkjente meldinger | `/api/cron/utsending` | ☐ | ☐ |
+| `CRON_SECRET_OPPVARMING` | Nullstiller tellere og viser oppvarmingsstatus | `/api/cron/oppvarming` | ☐ | ☐ |
+| `CRON_SECRET_RYDDING` | Sletter utløpte sesjoner og gammel driftshistorikk | `/api/cron/rydding` | ☐ | ☐ |
 
 > Mangler én, feiler **bare** den jobben, med en tydelig melding i dashbordet. Det er med
 > vilje: én manglende nøkkel skal ikke ta ned hele tidsplanen.
+>
+> Alle fem kan kalles i tørrkjøring, som er standard. Legg til `?torrkjoering=false` for å
+> faktisk utføre noe. Det er vanskelig å gjøre ved et uhell, og det er meningen.
+
+### Anbefalt rekkefølge og tidspunkt
+
+Jobbene er uavhengige, men rekkefølgen under gir mest mening. Tidspunktene ligger i
+`CronJobb` i databasen og kan endres uten at noen skriver kode.
+
+| Jobb | Foreslått | Hvorfor |
+|---|---|---|
+| `enhetsregister` | 06:00 på hverdager | Fyller målgruppen før dagen begynner |
+| `oppvarming` | 05:00 hver dag | Nullstiller tellere før første utsending |
+| `sekvens` | 07:00 på hverdager | Lager dagens utkast, så de ligger klare |
+| `utsending` | hvert 15. min 08–16 på hverdager | Sender det du har godkjent, innenfor vinduet |
+| `rydding` | 03:00 søndager | Driftsvedlikehold når ingen ser på |
 
 ## C3. Integrasjoner — alle valgfrie
 

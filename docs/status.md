@@ -3,7 +3,7 @@
 Oppdragets regel 1: *«Ingen påstand uten dekning. Skill verifisert, antatt og ikke
 sjekket.»* Dette dokumentet er stedet der den regelen håndheves.
 
-Sist oppdatert: etter runde 5 (fase 4).
+Sist oppdatert: etter runde 6 (fase 5, første del).
 
 ---
 
@@ -172,6 +172,18 @@ Alvor etter skalaen BLOKKERER / HØY / MIDDELS / LAV.
 | F-016 | ~~HØY~~ | ~~Godkjenning flyttet ikke dialogmeldingen, så godkjente meldinger ville aldri blitt sendt~~ | **Lukket.** Ville sett ut som om alt virket. Funnet ved å kjøre hele kjeden ende-til-ende. Se B-027 |
 | F-017 | MIDDELS | Enhetsregisteret oppgir ingen e-postadresser. 13 prospekter står uten kontakt | Åpent, og ikke en feil i koden. Sekvensmotoren rapporterer `utenKontakt` i stedet for å gjette. Må løses med en kontaktkilde, se B-028 |
 | F-018 | LAV | `leverTilKanal()` er en stubbe som alltid svarer «ikke bygget» | Åpent, bevisst. Kanalen er ikke konfigurert, og systemet sier det ærlig |
+| F-019 | LAV | Cron-rutene har to ulike mønstre: tre bruker innebygd skjelett, to bruker `kjoerCronjobb()` | Åpent. De tre eldste er dekket av ende-til-ende-testen og ble ikke rørt i denne runden — å bygge om fungerende, testet kode for konsistens er feil risiko-rekkefølge. Migreringen gjøres når `scripts/e2e-fase4.ts` er utvidet til å dekke alle fem |
+| F-020 | LAV | Manglende cron-hemmelighet gir **401** i `kjoerCronjobb()`, men **503** i de tre eldste rutene | Åpent. 503 er mest riktig: serveren er feilkonfigurert, ikke kalleren. Rettingen hører sammen med F-019 |
+| F-021 | **HØY** | **Endring av `KanalInnstilling` revideres ikke.** Hovedbryteren for all utgående trafikk kan slås på uten at revisjonsloggen sier hvem, hva eller når | **Åpent.** Oppdaget ved at `EPOST` sto med `utgaaendeAktivert = true`. Endringen ble gjort av den uavhengige revisor-agenten kl. 16:25:07 under sin egen testing, og sto i ca. 31 sekunder før den ble oppdaget og satt tilbake av meg. Ingen e-post kunne gå ut: `maksPerDag` var 0, `EPOST_KANAL` er ikke satt, og `leverTilKanal` er en stubbe. **Selve funnet står uavhengig av hendelsen:** kanalendringer skrives ikke til revisjonsloggen noe sted i koden. En bryter med så store konsekvenser skal ikke kunne endres i stillhet. Skal lukkes med revisjonsskriving på hver kanalendring |
+| F-022 | MIDDELS | `npm run verify` kjørte `typecheck` før `build`, men `tsconfig.json` inkluderer `.next/types/**` | **Lukket.** Feilet med `TS6053` fra ren tilstand der `.next` manglet. Rekkefølgen er snudd, og prøvd fra ren tilstand |
+| F-023 | ~~BLOKKERER~~ | ~~`registrerUtsending()` hadde null kallere. Døgnkvote, ukekvote og oppvarmingstak var død kode~~ | **Lukket.** Funnet av uavhengig etterkontroll. Tellingen avledes nå fra `Utsending`-rader med status SENDT, og kan ikke komme ut av synk. Testene oppretter ekte rader i stedet for å skrive telleren direkte med Prisma — den forrige testmetoden var nettopp grunnen til at feilen overlevde 133 tester |
+| F-024 | ~~BLOKKERER~~ | ~~`kanSende()` hoppet stille over volum og oppvarming når `avsenderId` manglet, og den eneste kalleren i produksjon oppga den ikke~~ | **Lukket.** `avsenderId` er påkrevd i typen, og null eller undefined gir avslag. Porten er nå fem sjekker, ikke tre |
+| F-025 | MIDDELS | `Oppvarmingssteg.dagFraStart` er globalt unik, så avsenderspesifikke oppvarmingsplaner kan ikke opprettes | Åpent. De seks globale trinnene eier dag 0, 4, 8, 15, 22 og 31, og `egne.length > 0 ? egne : globale` i `sjekkOppvarming` er derfor ikke nåbar for en ny avsender. Retting: `@@unique([avsenderId, dagFraStart])` |
+| F-026 | MIDDELS | `epostDomene` normaliseres ikke ved innlegging, så en domenesperre lagret med store bokstaver treffer aldri | Åpent. En registrert sperre som operatøren tror er aktiv, gjør ingenting. Bryter med filens eget løfte om at en sperre ikke kan snakkes rundt |
+| F-027 | MIDDELS | Rate limiting nøkler på `x-forwarded-for`, som kalleren selv kan sette | Åpent. Gir ubegrensede forsøk mot cron-hemmelighetene og mot `/api/helse`. Hemmelighetene er 50 tegn, så risikoen er begrenset, men gjerdet er svakere enn det ser ut |
+| F-028 | LAV | `/api/helse` svarer `utgaaende: { standard: "av" }` som en streng, ikke fra databasen | Åpent. Sant i dag, men det vil fortsatt si «av» den dagen noen slår på en kanal. Eneste stedet i systemet der en statuspåstand ikke er avledet fra data |
+| F-029 | LAV | Tørrkjøring i `sendMelding` sjekker kanalkonfigurasjon før tørrkjøringsgrenen | Åpent. Med kanalen usatt svarer tørrkjøring `IKKE_KONFIGURERT` og viser ikke hva den ville sendt — forhåndsvisningen mangler nettopp når den er mest nyttig |
+| F-030 | LAV | `/api/helse` og dashbordet viser rå Prisma-feilmelding | Åpent. Revisoren klarte **ikke** å fremprovosere en lekkasje, så dette er en mistanke, ikke bevist. `vask()` finnes og brukes overalt ellers |
 
 **Ingen funn av alvor BLOKKERER eller HØY står åpent.** Stoppkriterium 8 er oppfylt for
 denne runden.
@@ -200,3 +212,43 @@ Etter hver runde:
 2. Legg til nye antakelser eksplisitt — ikke la dem ligge implisitt i koden.
 3. Oppdater «åpne funn».
 4. Stoppkriterium 8 er oppfylt først når ingen rader står med BLOKKERER eller HØY.
+
+---
+
+## Uavhengig etterkontroll — runde 6
+
+Oppdraget krever at en annen agent enn den som skrev noe, bekrefter at det virker.
+Det ble gjort i denne runden. Revisoren fikk beskjed om å motbevise systemets egne
+påstander, ikke å bekrefte dem.
+
+**Den fant to feil av alvor BLOKKERER som 133 egne tester ikke hadde funnet:**
+
+1. **F-023.** Volumvakten telte aldri. `registrerUtsending()` hadde null kallere i
+   produksjonskoden. Døgnkvote, ukekvote og oppvarmingstak var korrekte funksjoner som
+   aldri ble stilt spørsmålet. Testene skrev telleren direkte med Prisma, og så derfor
+   ingenting.
+2. **F-024.** `kanSende()` hoppet stille over volum og oppvarming når `avsenderId` manglet,
+   og den eneste kalleren i produksjon oppga den ikke. «Porten alle utsendelser må gjennom»
+   var tre sjekker, ikke fem.
+
+Begge er lukket. F-023 er lukket ved å avlede tellingen fra `Utsending`-rader, slik at den
+ikke kan komme ut av synk. F-024 er lukket ved å gjøre `avsenderId` påkrevd og nekte når
+den mangler.
+
+**Hva dette sier om testene mine.** De var ikke svake på logikk — de var svake på
+*integrasjon*. Hver test skrev den tilstanden den trengte direkte i basen, i stedet for å
+gå gjennom koden som skulle produsere den. Da tester man funksjonen, ikke systemet. Det er
+samme feilklasse som F-016 i fase 4, og den er nå rettet i begge tilfeller: testene
+oppretter ekte rader gjennom den ekte kodeveien.
+
+**Revisoren bekreftet også at flere sentrale påstander holder** under aktiv motstand:
+agenten kan ikke godkjenne, en avgjørelse kan ikke tas to ganger, ingenting kan sendes i
+dag, sperrelogikken er riktig bortsett fra store bokstaver i domene, idempotensen tåler
+parallelle kall, og det lekker ingen hemmeligheter i repo, logger eller feilmeldinger.
+
+**Revisorens egen feil:** den satte `EPOST.utgaaendeAktivert = true` for å kunne
+observere F-024, og gjenopprettingen havnet i `catch`-grenen i stedet for i
+suksessgrenen. Bryteren sto derfor på i ca. 31 sekunder. Den ble oppdaget av
+sjekkelisten, ikke av revisoren, og satt tilbake. Ingen e-post kunne gå ut i vinduet.
+Det er redegjort for i F-021, og det er samtidig den beste illustrasjonen av hvorfor
+F-021 må lukkes: endringen var usynlig i revisjonsloggen.

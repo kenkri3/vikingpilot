@@ -10,7 +10,14 @@ import { test, describe, before, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
 
 import { prisma, lukkDatabase } from "@/lib/db";
-import { sjekkVolum, registrerUtsending, dognNokkel, ukeNokkel, nullstillUtlopteTellere } from "@/lib/guards/volum";
+import {
+  sjekkVolum,
+  dognNokkel,
+  ukeNokkel,
+  norskMidnatt,
+  gjenvaerendeKvote,
+} from "@/lib/guards/volum";
+import { norskTid } from "@/lib/tid/vinduer";
 import {
   sjekkOppvarming,
   effektivDognkvote,
@@ -188,10 +195,9 @@ describe("utsendingsvakt — mot database", { skip: !harDatabase ? "DATABASE_URL
   });
 
   beforeEach(async () => {
-    await prisma.avsender.update({
-      where: { id: avsenderId },
-      data: { sendtIDag: 0, sendtDenneUken: 0, dognDato: null, ukeDato: null },
-    });
+    // Rydd bort sendte meldinger fra forrige test. Tellingen er avledet fra
+    // Utsending-tabellen, så det er radene som er tilstanden — ikke en teller.
+    await prisma.utsending.deleteMany({ where: { avsenderId } });
   });
 
   after(async () => {
@@ -203,6 +209,27 @@ describe("utsendingsvakt — mot database", { skip: !harDatabase ? "DATABASE_URL
     await prisma.organisasjon.deleteMany({ where: { orgnr: ORGNR } });
     await lukkDatabase();
   });
+
+  /**
+   * Legger inn `antall` sendte meldinger for avsenderen på et tidspunkt.
+   *
+   * Dette er nøkkelen til at testene nå tester det virkelige systemet. Den
+   * forrige utgaven skrev `Avsender.sendtIDag` direkte med Prisma, og da så alt
+   * riktig ut selv om ingen produksjonskode noen gang økte telleren.
+   */
+  async function leggInnSendte(antall: number, naar: Date): Promise<void> {
+    for (let i = 0; i < antall; i += 1) {
+      await prisma.utsending.create({
+        data: {
+          idempotensNokkel: `epost:test-${avsenderId}-${naar.getTime()}-${i}`,
+          kanal: "EPOST",
+          avsenderId,
+          status: "SENDT",
+          sendtTid: naar,
+        },
+      });
+    }
+  }
 
   // -------------------------------------------------------------------------
   // Volum
@@ -224,64 +251,73 @@ describe("utsendingsvakt — mot database", { skip: !harDatabase ? "DATABASE_URL
     const svar = await sjekkVolum(avsenderId, NAA);
     assert.equal(svar.tillatt, true, svar.grunn);
     assert.equal(svar.maksPerDag, 100);
+    assert.equal(svar.sendtIDag, 0, "ingen meldinger er sendt ennå");
+  });
+
+  test("BRUDD: tellingen ser faktisk sendte meldinger", async () => {
+    // Denne testen ville feilet mot den forrige utgaven, der tellingen kom fra
+    // en teller som ingen produksjonskode oppdaterte.
+    await leggInnSendte(3, NAA);
+
+    const svar = await sjekkVolum(avsenderId, NAA);
+    assert.equal(svar.sendtIDag, 3, `telte ${svar.sendtIDag} i stedet for 3`);
+    assert.equal(svar.sendtDenneUken, 3);
   });
 
   test("BRUDD: døgnkvoten stopper den ene meldingen for mye", async () => {
-    await prisma.avsender.update({
-      where: { id: avsenderId },
-      data: { sendtIDag: 99, dognDato: NAA, ukeDato: NAA },
-    });
+    await leggInnSendte(100, NAA);
+
+    // Kvoten er nøyaktig brukt opp. Den neste skal stoppes.
+    const oppbrukt = await sjekkVolum(avsenderId, NAA);
+    assert.equal(oppbrukt.sendtIDag, 100, `telte ${oppbrukt.sendtIDag} i stedet for 100`);
+    assert.equal(oppbrukt.tillatt, false, "melding nummer 101 slapp gjennom");
+    assert.match(oppbrukt.grunn, /Døgnkvoten er brukt opp/);
+
+    // Og med én færre skal den fortsatt slippe gjennom. Det er grensen vi tester.
+    await prisma.utsending.deleteMany({ where: { avsenderId } });
+    await leggInnSendte(99, NAA);
 
     const nestSiste = await sjekkVolum(avsenderId, NAA);
-    assert.equal(nestSiste.tillatt, true, "den 99. meldingen skal fortsatt gå");
-
-    await prisma.avsender.update({
-      where: { id: avsenderId },
-      data: { sendtIDag: 100 },
-    });
-
-    const oppbrukt = await sjekkVolum(avsenderId, NAA);
-    assert.equal(oppbrukt.tillatt, false, "den 101. meldingen slapp gjennom");
-    assert.match(oppbrukt.grunn, /Døgnkvoten er brukt opp/);
+    assert.equal(nestSiste.tillatt, true, "den 100. meldingen skal fortsatt gå");
+    assert.equal(nestSiste.sendtIDag, 99);
   });
 
   test("BRUDD: ukekvoten stopper selv når døgnkvoten er ledig", async () => {
-    await prisma.avsender.update({
-      where: { id: avsenderId },
-      data: { sendtIDag: 0, sendtDenneUken: 500, dognDato: NAA, ukeDato: NAA },
-    });
+    // 500 sendt tidligere i uken, men ingen i dag.
+    const mandag = new Date(Date.UTC(2026, 5, 15, 10, 0, 0));
+    await leggInnSendte(500, mandag);
 
-    const svar = await sjekkVolum(avsenderId, NAA);
+    const svar = await sjekkVolum(avsenderId, new Date(Date.UTC(2026, 5, 17, 10, 0, 0)));
     assert.equal(svar.tillatt, false, "ukekvoten ble ikke håndhevet");
     assert.match(svar.grunn, /Ukekvoten er brukt opp/);
   });
 
-  test("telleren fra i går blokkerer ikke i dag", async () => {
-    const igaar = new Date(Date.UTC(2026, 5, 14, 10, 0, 0));
-    await prisma.avsender.update({
-      where: { id: avsenderId },
-      data: { sendtIDag: 100, sendtDenneUken: 100, dognDato: igaar, ukeDato: igaar },
-    });
+  test("meldinger fra forrige uke teller verken i dag eller denne uken", async () => {
+    // NAA er onsdag 17. juni. Uken begynte mandag 15. juni.
+    // Søndag 14. juni ligger i UKEN FØR, altså utenfor begge vinduene.
+    const forrigeUke = new Date(Date.UTC(2026, 5, 14, 10, 0, 0));
+    await leggInnSendte(100, forrigeUke);
 
     const svar = await sjekkVolum(avsenderId, NAA);
-    assert.equal(svar.tillatt, true, `i går skal ikke telle i dag: ${svar.grunn}`);
-    assert.equal(svar.sendtIDag, 0);
+    assert.equal(svar.tillatt, true, `forrige uke skal ikke telle: ${svar.grunn}`);
+    assert.equal(svar.sendtIDag, 0, "døgntellingen skal starte på nytt");
+    assert.equal(svar.sendtDenneUken, 0, "ukestellingen skal starte på nytt");
   });
 
-  test("registrerUtsending teller opp og nullstiller ved dagnytta", async () => {
-    await registrerUtsending(avsenderId, NAA);
-    const etter1 = await sjekkVolum(avsenderId, NAA);
-    assert.equal(etter1.sendtIDag, 1, "telleren økte ikke");
+  test("meldinger fra tidligere i samme uke teller i uken, men ikke i dag", async () => {
+    // NAA er 15. juni kl. 10:00 UTC, altså 12:00 norsk tid.
+    //
+    // Vi legger meldingene sent på kvelden 15. juni UTC. Det er 16. juni i norsk
+    // tid, altså en ANNEN norsk dag enn NAA — men fortsatt samme uke, som
+    // begynte mandag 15. juni. Det er nettopp skillet vi vil teste.
+    const senKveld = new Date(Date.UTC(2026, 5, 15, 22, 0, 0));
+    assert.equal(norskTid(senKveld).dato, "2026-06-16", "skal være neste norske dag");
 
-    await registrerUtsending(avsenderId, NAA);
-    const etter2 = await sjekkVolum(avsenderId, NAA);
-    assert.equal(etter2.sendtIDag, 2);
+    await leggInnSendte(7, senKveld);
 
-    // Neste dag skal telleren starte på nytt.
-    const imorgen = new Date(Date.UTC(2026, 5, 16, 10, 0, 0));
-    await registrerUtsending(avsenderId, imorgen);
-    const imorgenSvar = await sjekkVolum(avsenderId, imorgen);
-    assert.equal(imorgenSvar.sendtIDag, 1, "telleren nullstilte seg ikke ved dagnytta");
+    const svar = await sjekkVolum(avsenderId, NAA);
+    assert.equal(svar.sendtIDag, 0, "en annen norsk dag skal ikke telle som i dag");
+    assert.equal(svar.sendtDenneUken, 7, "men den skal telle i uken");
   });
 
   test("døgn- og ukenøkkel er stabile og riktige", () => {
@@ -292,6 +328,17 @@ describe("utsendingsvakt — mot database", { skip: !harDatabase ? "DATABASE_URL
     assert.equal(ukeNokkel(onsdag), "2026-06-15");
     assert.equal(ukeNokkel(new Date(Date.UTC(2026, 5, 21, 10))), "2026-06-15", "søndag hører til samme uke");
     assert.equal(ukeNokkel(new Date(Date.UTC(2026, 5, 22, 10))), "2026-06-22", "mandag starter ny uke");
+  });
+
+  test("norsk midnatt regnes riktig, også over sommertid", () => {
+    // Vintertid: UTC+1. Sommertid: UTC+2.
+    assert.equal(norskMidnatt("2026-01-15").toISOString(), "2026-01-14T23:00:00.000Z");
+    assert.equal(norskMidnatt("2026-07-15").toISOString(), "2026-07-14T22:00:00.000Z");
+
+    // Midnatt norsk tid skal gi datoen vi ba om, i norsk tid.
+    const norsk = norskTid(norskMidnatt("2026-07-15"));
+    assert.equal(norsk.dato, "2026-07-15");
+    assert.equal(norsk.time, 0);
   });
 
   // -------------------------------------------------------------------------
@@ -475,20 +522,35 @@ describe("utsendingsvakt — mot database", { skip: !harDatabase ? "DATABASE_URL
     assert.equal(b.reservert, false, "to reservasjoner uten mottaker slapp gjennom");
   });
 
-  test("nullstiller utløpte tellere uten å røre gjeldende", async () => {
-    await prisma.avsender.update({
-      where: { id: avsenderId },
-      data: { sendtIDag: 7, sendtDenneUken: 7, dognDato: NAA, ukeDato: NAA },
+  test("gjenvaerendeKvote sier hvor mange som kan sendes nå", async () => {
+    await leggInnSendte(97, NAA);
+
+    const { antall, grunn } = await gjenvaerendeKvote(avsenderId, NAA);
+    assert.equal(antall, 3, `forventet 3 igjen, fikk ${antall}. ${grunn}`);
+  });
+
+  test("gjenvaerendeKvote er null når kvoten er brukt opp", async () => {
+    await leggInnSendte(100, NAA);
+
+    const { antall } = await gjenvaerendeKvote(avsenderId, NAA);
+    assert.equal(antall, 0);
+  });
+
+  test("en kansellert eller feilet utsending teller IKKE mot kvoten", async () => {
+    // Bare det som beviselig er sendt, skal telle. Ellers ville en feilet
+    // sending spist av kvoten uten at noen fikk noe.
+    await prisma.utsending.create({
+      data: {
+        idempotensNokkel: `epost:feilet-${Date.now()}`,
+        kanal: "EPOST",
+        avsenderId,
+        status: "FEILET",
+        sendtTid: null,
+      },
     });
 
-    await nullstillUtlopteTellere(NAA);
-
-    const uendret = await prisma.avsender.findUnique({ where: { id: avsenderId } });
-    assert.equal(uendret?.sendtIDag, 7, "gjeldende dag ble nullstilt ved et uhell");
-
-    // Neste dag skal den nullstilles.
-    await nullstillUtlopteTellere(new Date(Date.UTC(2026, 5, 20, 10)));
-    const nullstilt = await prisma.avsender.findUnique({ where: { id: avsenderId } });
-    assert.equal(nullstilt?.sendtIDag, 0, "utløpt teller ble ikke nullstilt");
+    const svar = await sjekkVolum(avsenderId, NAA);
+    assert.equal(svar.sendtIDag, 0, "en feilet utsending ble talt med");
+    assert.equal(svar.tillatt, true);
   });
 });

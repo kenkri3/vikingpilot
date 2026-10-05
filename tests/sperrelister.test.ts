@@ -435,10 +435,42 @@ describe("sperrelister — bruddforsøk", { skip: !harDatabase ? "DATABASE_URL m
 
   test("BRUDD: stengt kanal stopper alt, uansett mottaker", async () => {
     // Alle kanaler er av i frødataene. En helt fri mottaker skal likevel stoppes.
-    const svar = await kanSende({ kanal: "EPOST", epost: adresse("heltfri", "p") });
+    const svar = await kanSende({
+      kanal: "EPOST",
+      epost: adresse("heltfri", "p"),
+      avsenderId: "finnes-ikke",
+    });
 
     assert.equal(svar.tillatt, false, "en stengt kanal slapp en melding gjennom");
     assert.match(svar.grunn, /AV|ikke satt opp/i);
+  });
+
+  test("BRUDD: uten avsender nektes sending", async () => {
+    // Dette var en ekte feil. Var avsenderen valgfri, hoppet kanSende over både
+    // kvote og oppvarming — og den eneste kalleren i produksjon oppga den ikke.
+    //
+    // Feltet er nå påkrevd i typen, så en kallere kan ikke lenger glemme det.
+    // Men den kan fortsatt sende inn null eller undefined, og da skal vi nekte.
+    const uten = await kanSende({
+      kanal: "EPOST",
+      epost: adresse("utenavsender", "r"),
+      avsenderId: undefined,
+    });
+    assert.equal(uten.tillatt, false, "sending uten avsender slapp gjennom");
+    assert.match(uten.grunn, /[Ii]ngen avsender/);
+
+    const medNull = await kanSende({
+      kanal: "EPOST",
+      epost: adresse("utenavsender", "r"),
+      avsenderId: null,
+    });
+    assert.equal(medNull.tillatt, false, "avsenderId = null slapp gjennom");
+
+    // Kontroll: sjekkene som krever avsender, skal faktisk ha kjørt.
+    assert.ok(
+      !uten.sjekket.includes("volum"),
+      "volum skal ikke sjekkes når vi alt har nektet for manglende avsender",
+    );
   });
 
   test("sjekkKanalApen sier nei for alle kanaler nå", async () => {
@@ -453,7 +485,7 @@ describe("sperrelister — bruddforsøk", { skip: !harDatabase ? "DATABASE_URL m
     const epost = adresse("rekkefolge", "q");
     await leggTilSperre({ type: "GLOBAL", grunn: "MANUELL", epost, kilde: KILDE });
 
-    const svar = await kanSende({ kanal: "EPOST", epost });
+    const svar = await kanSende({ kanal: "EPOST", epost, avsenderId: "finnes-ikke" });
     assert.equal(svar.tillatt, false);
     assert.match(svar.grunn, /AV for EPOST/, "kanalsjekken kom ikke først");
   });
