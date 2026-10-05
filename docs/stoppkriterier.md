@@ -92,24 +92,48 @@ i `docs/status.md` når det foreligger.
 
 ## Ærlig status per nå
 
-Etter runde 6 (fase 5, første del).
+Etter runde 7. Alle kriteriene som kan oppfylles uten Kenneths konto er oppfylt.
 
 | # | Kriterium | Status | Merknad |
 |---|---|---|---|
-| 1 | Bygg, typekontroll og alle sjekker grønne | **Oppfylt** | `npm run verify` → exit 0, 133 tester |
-| 2 | Starter på Railway med tom database | **Delvis** | Selvoppsett mot tom database er bevist lokalt, fra 0 tabeller. Selve Railway-deployen er ikke kjørt — den krever Kenneths konto |
-| 3 | Hver modul demonstrerbar med frødata | **Oppfylt** | Sjekkelisten dekker alle ni moduler og kjører uten nettverk |
-| 4 | Hver integrasjon viser ærlig «ikke konfigurert» | **Oppfylt** | Alle fire navngir nøyaktig hvilke nøkler som mangler |
-| 5 | Bevist at ingenting kan sendes ved et uhell | **Oppfylt** | 0 av 6 kanaler slått på. Etter hele kjeden: 0 utsendinger. Cron tørrkjører som standard |
-| 6 | Guardrails testet med bruddforsøk | **Oppfylt** | 133 tester, hvorav svært mange er aktive bruddforsøk mot hver guardrail |
-| 7 | Manuell liste komplett og prøvd fra tom mappe | **Delvis** | Kjørt fra tom database av meg. Ikke prøvd av Kenneth eller Fredrik |
-| 8 | Ingen funn av BLOKKERER eller HØY | **Delvis** | Ingen åpne nå. Uavhengig etterkontroll pågår |
+| 1 | Bygg, typekontroll og alle sjekker grønne | **Oppfylt** | `npm run verify` → exit 0, **152 tester**, prøvd fra ren tilstand uten `.next` |
+| 2 | Starter på Railway med tom database | **Delvis** | Selvoppsett mot tom database er bevist lokalt, fra **0 tabeller**, med kommandoene i den manuelle listen. Selve Railway-deployen er ikke kjørt — krever Kenneths konto |
+| 3 | Hver modul demonstrerbar med frødata | **Oppfylt** | Sjekkelisten dekker alle ni moduler og kjører uten nettverk: **53 kontroller** |
+| 4 | Hver integrasjon viser ærlig «ikke konfigurert» | **Oppfylt** | Alle fire navngir nøyaktig hvilke nøkler som mangler. Enhetsregisteret er ærlig om at det *ikke* trenger nøkkel |
+| 5 | Bevist at ingenting kan sendes ved et uhell | **Oppfylt** | 0 av 6 kanaler slått på. Etter hele kjeden: **0 utsendinger**. Cron tørrkjører som standard. Kanalpåslåing krever navn og begrunnelse |
+| 6 | Guardrails testet med bruddforsøk | **Oppfylt** | 152 tester, hvorav svært mange er aktive bruddforsøk. To BLOKKERER-feil funnet og lukket |
+| 7 | Manuell liste komplett og prøvd fra tom mappe | **Delvis** | Kjørt fra tom database av meg, steg for steg, med dokumenterte resultater. Ikke prøvd av Kenneth eller Fredrik |
+| 8 | Ingen funn av BLOKKERER eller HØY | **Oppfylt** | Uavhengig etterkontroll utført. 31 funn registrert, **ingen åpne av BLOKKERER eller HØY** |
 
-**Det som gjenstår er i hovedsak utenfor min rekkevidde:** Railway-deployen krever din
-konto, og en ekte prøve av den manuelle listen krever at noen andre enn jeg følger den.
+**De to gjenstående punktene kan jeg ikke lukke selv.** Begge krever Kenneth: en Railway-konto
+for deployen, og at han eller Fredrik følger den manuelle listen uten hjelp. Det er ikke
+arbeid som mangler i systemet — det er verifisering som krever en annen person.
 
-**Ett kriterium fortjener en presisering.** Kriterium 3 sier at hver modul skal kunne
-demonstreres med frødata. Det er oppfylt — men Enhetsregister-pipelinen henter ekte data,
-og de 13 prospektene i basen er ekte norske virksomheter, ikke frødata. Det er strengt tatt
-bedre enn kravet, men det betyr også at sjekkelisten må tåle at innholdet varierer. Den
-gjør det: den sjekker invarianter, ikke bestemte rader.
+**Ett kriterium fortjener presisering.** Kriterium 3 sier at hver modul skal kunne
+demonstreres med frødata. Det er oppfylt — men Enhetsregister-pipelinen henter ekte data, og
+de 13 prospektene i basen er ekte norske virksomheter. Det er strengt tatt bedre enn kravet.
+Sjekkelisten sjekker derfor invarianter, ikke bestemte rader, og tåler at innholdet varierer.
+
+---
+
+## Hva den uavhengige etterkontrollen endret
+
+Oppdraget krever at en annen agent enn den som skrev noe, bekrefter at det virker. Det ble
+gjort i runde 6, og den var ikke en formalitet: den fant **to feil av alvor BLOKKERER** som
+152 egne tester ikke hadde funnet.
+
+| Feil | Hva den betydde |
+|---|---|
+| F-023 | `registrerUtsending()` hadde null kallere. Døgnkvote, ukekvote og oppvarmingstak var korrekte funksjoner som aldri ble stilt spørsmålet |
+| F-024 | `kanSende()` hoppet stille over volum og oppvarming når `avsenderId` manglet — og den eneste kalleren oppga den ikke |
+
+**Fellesnevneren er den viktigste lærdommen fra hele økten:** testene var ikke svake på
+logikk, men på *integrasjon*. Hver test skrev tilstanden den trengte direkte i basen, i
+stedet for å gå gjennom koden som skulle produsere den. Da tester man funksjonen, ikke
+systemet. Samme feilklasse hadde allerede gitt F-016 i fase 4.
+
+**Og én feil fant verken testene eller etterkontrollen, men et bevis:** F-031. Mens F-025
+skulle bevises, sammenlignet beviset `sjekkOppvarming` med `effektivDognkvote`, og de to var
+uenige — 1 mot 100. Oppvarmingen slapp kvoten fri så snart planen ikke hadde et neste trinn,
+så en plan med ett trinn opphevet seg selv etter én dag. To funksjoner som skal si det samme
+om samme tilstand, bør alltid sammenlignes.
