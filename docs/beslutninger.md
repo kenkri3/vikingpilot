@@ -458,3 +458,25 @@ Kenneth på den første kommandoen han ble bedt om å kjøre.
 at de virker. En liste over kommandoer er bare nyttig hvis kommandoene faktisk går an å
 kjøre.
 **Status:** gjeldende.
+---
+
+## B-035 — `.dockerignore` er ikke ryddighet, det er sikkerhet
+
+**Dato:** fase 5, under deploy
+**Beslutning:** Repoet har en `.dockerignore` som holder `.env`, `node_modules`, `.next`,
+`.pg` og genererte filer ute av Docker-bygget.
+**Begrunnelse:** Dockerfile har `COPY . .` i byggesteget. Uten `.dockerignore` sendes hele
+mappen til Docker-motoren. Det fikk to konsekvenser:
+
+1. **`.env` med `SESSION_SECRET` og de fem cron-hemmelighetene ble kopiert inn i bildet.**
+   Railway setter sine egne variabler ved kjøring, og de ville vunnet over filen — men
+   hemmelighetene ville ligget i bildelagene likevel.
+2. **Byggekonteksten var 822 MB.** `node_modules` (672 MB) og en lokal PostgreSQL-database
+   (68 MB) ble sendt til Docker-motoren ved hver bygging. `node_modules` inneholdt i tillegg
+   Windows-binærer, som ikke hører hjemme i et Linux-bilde.
+
+Etter: **0,8 MB** byggekontekst.
+**Hvordan det ble funnet:** ved å undersøke bygget Kenneth hadde startet, i stedet for å anta
+at det ville gå bra fordi det gikk bra lokalt. Docker bruker ikke `.gitignore` — at `.env`
+var ignorert av git, beskyttet den ikke mot Docker.
+**Status:** gjeldende.

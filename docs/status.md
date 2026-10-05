@@ -192,6 +192,7 @@ Alvor etter skalaen BLOKKERER / HØY / MIDDELS / LAV.
 | F-036 | ~~HØY~~ | ~~`src/generated` ble ikke kopiert inn i kjøresteget i Dockerfile, så oppstartsjobben ville ikke funnet Prisma-klienten~~ | **Lukket.** Kopieres eksplisitt |
 | F-030 | ~~LAV~~ | ~~`/api/helse` og dashbordet viste rå Prisma-feilmelding~~ | **Lukket som forsiktighetstiltak.** Revisoren klarte **ikke** å fremprovosere en lekkasje, så dette var en mistanke og ikke et bevis. `/api/helse` vasker nå meldingen med `vask()` likevel — det koster ingenting, og `vask()` brukes overalt ellers |
 | F-037 | ~~HØY~~ | ~~`npm run forhåndssjekk` virket ikke. npm lagret skriptnavnet ødelagt fordi det inneholdt `å`~~ | **Lukket.** Omdøpt til `forhandsjekk` (ASCII), og filen til `scripts/forhandsjekk.ts`. Dette ville truffet Kenneth på den **første kommandoen** han ble bedt om å kjøre, og feilmeldingen fra npm sier ingenting om hvorfor. Funnet ved å kjøre hver kommando README-en oppgir, i stedet for å anta at de virker. Se B-034 |
+| F-038 | ~~HØY~~ | ~~Det fantes ingen `.dockerignore`, så `COPY . .` sendte `.env` med alle hemmelighetene inn i Docker-bygget~~ | **Lukket.** `.dockerignore` lagt til. Byggekonteksten gikk fra **822 MB til 0,8 MB**, og `.env` kommer ikke lenger inn i bildet. Se B-035 |
 
 **Ingen funn av alvor BLOKKERER eller HØY står åpent.** Stoppkriterium 8 er oppfylt for
 denne runden.

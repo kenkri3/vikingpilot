@@ -1,0 +1,78 @@
+# Hva som IKKE skal inn i Docker-bygget.
+#
+# HVORFOR DENNE FINNES:
+# Dockerfile har `COPY . .` i byggesteget. Uten denne filen sendes HELE mappen til
+# Docker-motoren, og alt som ikke er listet opp her havner i byggekonteksten.
+#
+# Det fikk to konkrete konsekvenser:
+#
+#   1. `.env` med SESSION_SECRET og de fem cron-hemmelighetene ville blitt kopiert
+#      inn i bildet. Railway setter variablene sine ved kjøring, og de ville vunnet
+#      over filen — men hemmelighetene ville ligget i bildelagene likevel, synlige
+#      for hverandre som har tilgang til bildet.
+#
+#   2. `.pg/` er en lokal PostgreSQL-database på 68 MB, og `node_modules` er 672 MB.
+#      Begge ble sendt til Docker-motoren ved hver bygging. Det gjorde bygget
+#      unødvendig tregt, og `node_modules` inneholder Windows-binærer som ikke skal
+#      inn i et Linux-bilde.
+#
+# Dette er ikke bare ryddighet. Det er forskjellen mellom at hemmelighetene dine
+# ligger i et bygg og at de ikke gjør det.
+
+# --- Hemmeligheter. Aldri inn i et bilde. ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# --- Avhengigheter og bygg. Bygges på nytt inne i bildet. ---
+node_modules
+.next
+out
+dist
+build
+.turbo
+*.tsbuildinfo
+
+# --- Generert Prisma-klient. `prisma generate` kjører inne i bildet
+#     og lager den på nytt for riktig plattform (musl, ikke Windows). ---
+src/generated
+
+# --- Lokal database og verktøy. ---
+.pg
+.tools
+VikingPilotBuild
+
+# --- Git og editor. ---
+.git
+.gitignore
+.gitattributes
+.vscode
+.idea
+*.swp
+
+# --- Drift og logger. ---
+*.log
+logs
+server.log
+server.err
+
+# --- Dokumentasjon og tester. Trengs ikke for å kjøre tjenesten. ---
+docs
+tests
+LAGT-TIL-GRUNN.md
+README.md
+
+# --- Docker selv. ---
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# MERK: vi negarer ikke noe med `!` til slutt. Alt bygget trenger — prisma/,
+# src/, scripts/, public/, package.json og konfigurasjonsfilene — ligger på
+# toppnivå eller i mapper som ikke er nevnt over, og blir derfor med.
+# `src/generated` er det eneste unntaket: den lages på nytt inne i bildet av
+# `npx prisma generate`, for riktig plattform.
