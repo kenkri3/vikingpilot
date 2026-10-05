@@ -647,9 +647,48 @@ avsender-sjekken. **0 sendt, 0 kanaler åpne.**
 
 ---
 
+### Runde 11 — fase 5, sjette del
+
+**Gjort:** Bygget import av kontakter fra CSV. Dette er svaret på det som har stått som det
+viktigste åpne spørsmålet siden fase 3.
+
+**Endret for en bruker av systemet:** Ja, og det lukker en blindvei. Fram til nå fantes det
+**ingen vei** for å få en kontakt inn i systemet — ikke en import, ikke et API, ingenting.
+Den eneste måten var å skrive dem inn manuelt i databasen. Det er derfor de 13 prospektene
+har stått fastlåst: systemet er bygget for å sende, og det fantes ingen måte å gi det noen å
+sende til.
+
+S12 spurte *hvor* kontaktene kommer fra. Men uansett hvilket svar Kenneth velger, må de inn
+på én måte. Nå kan han lage en CSV og kjøre én kommando:
+
+```powershell
+npm run kontakt:import -- --fil kontakter.csv --grunnlag "Meldt på webinar" --ekte
+```
+
+**Det som er bygget:**
+
+- Tolkning av CSV som tåler semikolon, hermetegn, komma inne i felt og BOM fra Excel
+- Kobling til riktig selskap: orgnr først, så e-postdomene, så navn ved **entydig** treff
+- Streng validering — en kontakt vi ikke kan kontakte, lagres ikke
+- **Personvern:** nekter å lagre e-postadresser uten et dokumentert grunnlag
+- Tørrkjøring som standard, som alt annet i systemet
+- Idempotent: samme fil to ganger gir ikke duplikater
+- Skriver til revisjonsloggen
+
+**Prøvd:** egen CSV med 6 rader hvor 3 var bevisst ødelagte. Den fant manglende navn, ugyldig
+e-postadresse og duplikat i filen — med linjenummer. Tørrkjøring skrev ingenting. Ekte
+kjøring opprettet 3. Andre kjøring opprettet 0 og oppdaterte 3, og antallet sto stille på 3.
+
+**Fem feil av meg selv underveis:** `epostDomene` og `normalisertNavn` finnes ikke som
+unike felt på `Organisasjon` slik jeg antok, feltet heter `erBeslutningstaker` og ikke
+`beslutningstaker`, og jeg laget en syntaksfeil i sjekkelisten ved et uhell. Alle fanget av
+typekontroll og tester.
+
+**Blokkert av:** ingenting. Kenneth kan nå svare på S12 ved å lage en fil.
+
+---
+
 ### Neste runde — hvis ingenting endres
 
-De gjenværende funnene er alle LAV eller MIDDELS: F-003 (revisjonsloggen håndheves ikke i
-databasen), F-017 (kontaktkilde), F-032 (rate limiting i minnet). Det som virkelig gjenstår
-er verifisering som krever Kenneth: Railway-deployen og at han eller Fredrik prøver den
-manuelle listen.
+Det som gjenstår er verifisering som krever Kenneth: Railway-deployen og at han eller
+Fredrik prøver den manuelle listen. De åpne funnene er alle LAV eller MIDDELS.

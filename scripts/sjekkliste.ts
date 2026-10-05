@@ -30,6 +30,7 @@ import { kvoteForDag } from "../src/lib/guards/oppvarming.ts";
 import { byggIdempotensNokkel } from "../src/lib/guards/idempotens.ts";
 import { koStatus } from "../src/lib/godkjenning/ko.ts";
 import { regnPlanlagtTid } from "../src/lib/sekvens/motor.ts";
+import { tolkCsv, importerKontakter, erImportFeil } from "../src/lib/kontakter/import.ts";
 
 /**
  * Bygger en gyldig, privat virksomhet for filterkontrollene.
@@ -595,6 +596,45 @@ async function hoved() {
     ok("Idempotensnøkkelen er deterministisk og skiller mottakere og tørrkjøring");
   } else {
     nei("Idempotensnøkkelen virker ikke som den skal");
+  }
+
+  // Kontaktimport: formatet skal tolkes riktig, og personvernet skal håndheves.
+  const csvProve = [
+    "fornavn,etternavn,epost,beslutningstaker,samtykke",
+    `Kari,Nordmann,kari@sjekkliste.invalid,ja,Test`,
+    `Ugyldig,Epost,ikke-en-epost,,Test`,
+  ].join("\n");
+
+  const tolket = tolkCsv(csvProve);
+
+  if (tolket.rader.length === 1 && tolket.feil.length === 1) {
+    ok("Kontaktimport skiller gyldige rader fra ugyldige");
+  } else {
+    nei(
+      `Kontaktimporten tolket feil: ${tolket.rader.length} gyldige, ${tolket.feil.length} avviste`,
+    );
+  }
+
+  if (tolket.rader[0]?.beslutningstaker === true) {
+    ok("Kontaktimport leser «ja» som beslutningstaker");
+  } else {
+    nei("Kontaktimporten leste ikke beslutningstaker riktig");
+  }
+
+  // Personvern: uten grunnlag skal importen nekte.
+  let nektetUtenGrunnlag = false;
+  try {
+    await importerKontakter(`fornavn,etternavn,epost\nTest,Person,test@sjekkliste.invalid`, {
+      torrkjoering: true,
+    });
+  } catch (e) {
+    nektetUtenGrunnlag = erImportFeil(e);
+  }
+
+  if (nektetUtenGrunnlag) {
+    ok("Kontaktimport nekter å lagre personopplysninger uten grunnlag");
+  } else {
+    nei("Kontaktimporten godtok personopplysninger uten dokumentert grunnlag");
   }
 
   // Tilstandskontroll: ingen kanal skal kunne sende, og ingen sperre skal mangle mottaker.

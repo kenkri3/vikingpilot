@@ -109,11 +109,11 @@ Produktmodellen har SKU og pris. Jeg trenger de faktiske verdiene.
 
 ### S12 — Hvor kommer kontaktene fra?
 
-**Dette er det viktigste åpne spørsmålet nå.**
+**Dette er det viktigste åpne spørsmålet nå — men det blokkerer ikke lenger arbeidet.**
 
 Enhetsregisteret oppgir virksomheter — navn, orgnr, adresse, næringskode. Det oppgir
 **ikke** e-postadresser eller personer. Roller og fødselsnummer ligger bak et eget
-autorisert API som vi ikke bruker, og som krever avtale.
+autorisiert API som vi ikke bruker, og som krever avtale.
 
 Konsekvensen er målt, ikke antatt: de 13 prospektene pipelinen har hentet, har ingen
 kontakt. Sekvensmotoren svarer `utenKontakt: 13` i stedet for å finne på en adresse.
@@ -122,17 +122,31 @@ Systemet er bygget for å sende, men har ingen å sende til.
 Jeg finner ikke på e-postadresser. Å konstruere `fornavn.etternavn@firma.no` ville sendt
 post til fremmede, og det er nøyaktig den typen gjetning oppdraget forbyr.
 
-Hva vil du at vi gjør?
+**Hva som er gjort i mellomtiden:** Uansett hvilket svar du velger, må kontaktene inn i
+systemet på én måte. Før fantes det ingen — den eneste veien var å skrive dem inn manuelt i
+databasen. Nå finnes `npm run kontakt:import`, som tar en CSV. Den kobler kontaktene til
+riktige selskaper, avviser det den ikke kan bruke, krever dokumentert grunnlag for
+personopplysningene, og er trygg å kjøre flere ganger.
 
+Se [import-av-kontakter.md](import-av-kontakter.md).
+
+**Spørsmålet står altså, men du kan svare på det ved å lage en CSV.** Velg retning:
+
+- [ ] **Vi har en kontaktliste.** Lag en CSV med `fornavn,etternavn,epost` og kjør
+      `npm run kontakt:import -- --fil listen.csv --grunnlag "..."`. Ferdig.
 - [ ] **Vi henter roller fra Enhetsregisterets autoriserte API.** Krever avtale med
       Brønnøysundregistrene. Gir navn og rolle, men fortsatt ikke e-post.
-- [ ] **Vi har en kontaktliste.** Lim den inn, så bygger jeg importen.
 - [ ] **Vi henter fra nettsidene deres.** Krever egen innhøsting, og reiser
       personvernspørsmål vi må avklare før vi begynner.
-- [ ] **Vi tester med oppdiktede kontakter først**, og løser kilden senere.
+- [ ] **Vi tester med oppdiktede kontakter først**, og løser kilden senere. Importen
+      godtar dem, og alt annet kan prøves ende-til-ende.
 - [ ] **Annet:**
 
 **Svar:**
+
+**Hva som fortsatt ikke virker uten et svar:** ingenting sendes, og skal heller ikke det.
+Men uten kontakter kan vi ikke se om sekvensmotoren, godkjenningskøen og utsendingsvakten
+henger sammen på ekte data — bare på data vi selv har lagt inn i testene.
 
 ---
 

@@ -366,6 +366,33 @@ fyller seg heller ikke selv.
 
 ---
 
+## B10. Legg inn kontakter
+
+Enhetsregisteret oppgir virksomheter, **ikke e-postadresser**. Systemet kan fylle
+målgruppen selv, men den kan ikke kontakte noen før du legger inn kontakter.
+
+```powershell
+# Se hva som ville skjedd. Ingenting lagres.
+npm run kontakt:import -- --fil kontakter.csv --grunnlag "Hvorfor dere har lov til å lagre disse"
+
+# Lagre.
+npm run kontakt:import -- --fil kontakter.csv --grunnlag "Hvorfor dere har lov til å lagre disse" --ekte
+```
+
+Filen er en vanlig CSV med `fornavn`, `etternavn` og `epost` som påkrevde kolonner. Alt
+annet — telefon, rolle, orgnr, firmanavn, beslutningstaker, notat — er valgfritt.
+
+**Dette steget kan vente.** Uten kontakter virker alt annet; systemet sier bare ærlig at
+prospektene står uten kontakt i stedet for å finne på adresser.
+
+**Om personvern:** e-postadresser er personopplysninger. Har ikke filen en kolonne for
+samtykkegrunnlag, må du oppgi `--grunnlag`. Importen nekter ellers. Vi gjetter ikke på
+hvorfor vi har lov til å lagre opplysningene.
+
+Full formatbeskrivelse: [import-av-kontakter.md](import-av-kontakter.md).
+
+---
+
 # Del C — Variabler
 
 ## C1. Påkrevd for at systemet starter
