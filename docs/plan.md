@@ -612,8 +612,44 @@ tre konkrete grunner.
 
 ---
 
+### Runde 10 — fase 5, femte del
+
+**Gjort:** Slått sammen cron-rutene. Alle fem bruker nå `kjoerCronjobb()`. Det var ikke
+kosmetisk.
+
+**Endret for en bruker av systemet:** Ja, og det lukket et sikkerhetshull jeg selv hadde
+laget. Den globale sikringen mot gjetting på cron-hemmelighetene (B-032) bor i
+`kjoerCronjobb()`. Tre ruter brukte et eldre, innebygd skjelett og **hadde den ikke** —
+blant dem `utsending`, den eneste ruten i systemet som kan føre noe ut til en mottaker.
+
+Så: den ruten som betyr mest, var den som var svakest beskyttet mot hamring på nøkkelen.
+Jeg fant det ved å spørre hvilke ruter som faktisk har den nye beskyttelsen, ikke ved å anta
+at «alle ruter er like».
+
+**Prøvd etter migreringen:** 24 feilforsøk med 24 ulike forfalskede IP-er mot `utsending`,
+`oppvarming` og `sekvens`. Alle tre slo sikringen til ved forsøk 21. Utsendingsruten kjørte
+både tørrkjøring og ekte kjøring: tørrkjøring sendte ingenting, ekte kjøring ble nektet av
+avsender-sjekken. **0 sendt, 0 kanaler åpne.**
+
+**To feil av meg selv underveis:**
+
+1. Den første testen viste at sikringen **ikke** slo til på `utsending`, mens den slo til på
+   `oppvarming` — samme kode. Jeg kunne ha bortforklart det. Årsaken var at serveren kjørte
+   et bygg fra **før** migreringen. Etter et ryddig bygg slo alle tre rutene til ved forsøk
+   21. Lærdommen er verdt å ta med: **en test mot en kjørende server sier ingenting om koden
+   hvis bygget er eldre enn koden.**
+2. Jeg oppdaget at **F-020 var feilbeskrevet av meg.** Jeg hadde skrevet at de tre eldste
+   rutene svarte 503 der de nye svarte 401. Målt: 503 betyr «hemmeligheten er ikke satt på
+   serveren», 401 betyr «kalleren oppgir den ikke eller oppgir feil». Alle fem rutene gjorde
+   dette riktig hele tiden. Det var ikke en inkonsistens i koden, men i min beskrivelse.
+
+**Blokkert av:** ingenting jeg kan løse selv.
+
+---
+
 ### Neste runde — hvis ingenting endres
 
-Det som gjenstår er verifisering som krever Kenneth, ikke arbeid i systemet. De gjenværende
-funnene er alle LAV eller MIDDELS: F-003 (revisjonsloggen håndheves ikke i databasen),
-F-017 (kontaktkilde), F-019 og F-020 (to ulike cron-mønstre), F-032 (rate limiting i minnet).
+De gjenværende funnene er alle LAV eller MIDDELS: F-003 (revisjonsloggen håndheves ikke i
+databasen), F-017 (kontaktkilde), F-032 (rate limiting i minnet). Det som virkelig gjenstår
+er verifisering som krever Kenneth: Railway-deployen og at han eller Fredrik prøver den
+manuelle listen.
