@@ -251,6 +251,16 @@ Det siste er verdt å merke seg: Alpine bruker musl, mens maskinen her er Window
 som hører til. Det er sannsynligvis riktig, men det er ikke målt, og det står derfor som
 en åpen antakelse nedenfor.
 
+### Porten — sjekket før deploy
+
+`railway.json` har `healthcheckPath: /api/helse`. Railway setter variabelen `PORT`, og
+tjenesten må lytte på den, ellers svarer ikke helsesjekken og deployen feiler.
+
+Sjekket: `scripts/start-prod.mjs` linje 23 leser `process.env.PORT`, og linje 88 sender den
+videre til `next start -p`. Dockerfile har `ENV PORT=3000` bare som standardverdi; Railways
+variabel vinner. **Sett derfor `PORT=3000` som variabel i Railway, og mål domenet mot port
+3000**, så er de tre stedene enige.
+
 ---
 
 ## Uavhengig etterkontroll — runde 6
