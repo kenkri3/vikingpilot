@@ -3,7 +3,7 @@
 Oppdragets regel 1: *«Ingen påstand uten dekning. Skill verifisert, antatt og ikke
 sjekket.»* Dette dokumentet er stedet der den regelen håndheves.
 
-Sist oppdatert: etter runde 7 (fase 5, andre del).
+Sist oppdatert: etter runde 8 (fase 5, tredje del).
 
 ---
 

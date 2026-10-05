@@ -370,7 +370,40 @@ Omtales aldri ved produktnavn i kode eller dokumentasjon. Variablene er nøytral
 
 # Del D — Kontroll at det virker
 
-Kjør i `C:\VikingPilot`:
+## D0. Forhåndssjekk — kjør denne først
+
+Dette er den ene tingen som står mellom «det virker lokalt» og «det virker på Railway».
+Den sjekker miljøet mot denne listen og sier tydelig hva som mangler. **Den viser aldri en
+hemmelighet — bare navnet på variabelen og om den er satt.**
+
+```powershell
+cd C:\VikingPilot
+npm run forhåndssjekk
+```
+
+**Kjør den to ganger:** én gang lokalt før du legger inn variablene på Railway, og én gang
+på Railway etter første deploy. Den virker begge steder.
+
+Den sjekker blant annet:
+
+- at `DATABASE_URL` finnes, ser ut som en Postgres-adresse, og ikke inneholder en plassholder
+- at `SESSION_SECRET` er lang nok til å signere en cookie
+- at hver cron-jobb har sin **egen** hemmelighet — delte hemmeligheter gir en advarsel
+- at `.env` faktisk er ignorert og ikke sporet av git
+- at databasen svarer, at skjemaet er satt opp, og at migreringene er anvendt
+- at frødataene finnes: kanaler, brukere, cron-jobber, målgruppe og oppvarmingsplan
+- **at all utgående trafikk er av**
+
+Den avslutter med kode 0 hvis alt er i orden, og 1 hvis noe må rettes. «ADVARSEL» stopper
+deg ikke, men bør ses på før noe skal sendes.
+
+> **Hvorfor dette finnes:** uten den ville den første deployen vært den første prøven.
+> En manglende cron-hemmelighet eller et tomt skjema er ting du vil vite om *før* du
+> lurer på hvorfor dashbordet er tomt.
+
+---
+
+## D1. Bygg, sjekkeliste og oppstart
 
 ```powershell
 npm run verify      # bygg, typekontroll, tester

@@ -538,10 +538,49 @@ sammenlignes.** Det er en billig sjekk som fant en feil 144 tester gikk forbi.
 
 ---
 
+### Runde 8 — fase 5, tredje del
+
+**Gjort:** `scripts/forhåndssjekk.ts` — den ene tingen som stod mellom «det virker lokalt»
+og «det virker på Railway». Den sjekker miljøet mot oppsettlisten og sier tydelig hva som
+mangler. Den er lagt inn som **D0** i den manuelle listen, altså det første Kenneth gjør.
+
+**Endret for en bruker av systemet:** Ja, og det lukker et reelt hull. Fram til nå ville
+den første deployen vært den første prøven på om miljøet var riktig satt opp. Nå får
+Kenneth svaret før han deployer, og han kan kjøre samme sjekk på Railway etterpå.
+
+Den sjekker 18 ting, blant dem:
+
+- at `DATABASE_URL` ikke inneholder en plassholder
+- at `SESSION_SECRET` er lang nok til å signere en cookie
+- at hver cron-jobb har sin **egen** hemmelighet — delte hemmeligheter gir advarsel
+- at `.env` faktisk er ignorert og ikke sporet av git
+- at databasen svarer, at skjemaet er satt opp, og at migreringene er anvendt
+- at frødataene finnes, inkludert oppvarmingsplanen
+- **at all utgående trafikk er av**
+
+**Hvordan jeg vet at den virker:** en sjekk som aldri kan feile, er verdiløs. Jeg bygget
+derfor en `--miljoe`-modus og kjørte den mot en bevisst ødelagt miljøfil. Den fant kort
+`SESSION_SECRET`, en manglende cron-hemmelighet, to hemmeligheter som var for korte, fire
+jobber som delte hemmelighet, og at `UTGAAENDE_EPOST_AKTIVERT` sto på `true`. Riktig
+exit-kode 1.
+
+**Rettet egne feil underveis:**
+
+1. En skrivefeil (`ussatte`) som typekontrollen fanget.
+2. `advarseler` og deretter `advarselr` — norsk flertall av «advarsel» er «advarsler».
+   Rettet med en liten hjelpefunksjon i stedet for string-sammenslåing.
+3. Et duplikat npm-script jeg la inn ved et uhell.
+
+**Blokkert av:** ingenting jeg kan løse selv.
+
+---
+
 ### Neste runde — hvis ingenting endres
 
-De gjenværende funnene er F-027 (rate limiting nøkler på `x-forwarded-for`) og F-029
-(tørrkjøring sjekker kanalkonfigurasjon før tørrkjøringsgrenen). Begge er LAV og kan tas.
+Det som gjenstår er verifisering som krever Kenneth, ikke arbeid i systemet:
 
-**Det som virkelig mangler er utenfor min rekkevidde:** Railway-deployen, en kontaktkilde
-(S12), og at Kenneth eller Fredrik prøver den manuelle listen selv.
+- Railway-deployen (kriterium 2)
+- At han eller Fredrik følger den manuelle listen selv (kriterium 7), nå med D0 først
+
+Utover det står bare småfunn igjen: F-017 (kontaktkilde), F-019 og F-020 (to ulike
+cron-mønstre), F-032 (rate limiting i minnet). Alle er LAV eller MIDDELS og dokumentert.
