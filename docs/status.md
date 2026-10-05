@@ -3,7 +3,7 @@
 Oppdragets regel 1: *«Ingen påstand uten dekning. Skill verifisert, antatt og ikke
 sjekket.»* Dette dokumentet er stedet der den regelen håndheves.
 
-Sist oppdatert: etter runde 2 (fase 1).
+Sist oppdatert: etter runde 3 (fase 2).
 
 ---
 
@@ -53,7 +53,25 @@ Påstander jeg har målt, med kommandoen eller resultatet som beviser dem.
 | Tidsvindu stenger helg, rød dag og natt | Sjekkelisten: søndag, første juledag og natt kl. 04:00 avvises alle |
 | Norske røde dager regnes riktig | Skjærtorsdag 2026 → 2. april (påsken beregnes, ikke slås opp). 12 røde dager i 2026 |
 | Hemmeligheter maskeres i logger | Tilkoblingsstreng med passord → passordet erstattet med `[skjult]` |
-| Sjekkelisten er grønn | `npm run sjekkliste` → **26 bestått, 0 feilet** |
+| Sjekkelisten er grønn | `npm run sjekkliste` → **32 bestått, 0 feilet** |
+
+### Fase 2 — sperrelister og revisjonslogg
+
+| Påstand | Bevis |
+|---|---|
+| 27 bruddforsøk mot guardrailsene, alle avviser | `node --import tsx --test tests/sperrelister.test.ts` → 27 bestått, 0 feilet |
+| Store bokstaver og mellomrom omgår ikke en sperre | Test: tre varianter av samme adresse stoppes alle |
+| En global sperre på én adresse sperrer **ikke** andre | Test: `enperson@…` sperret, `enheltannen@…` slipper gjennom |
+| En kanalsperre stopper bare sin egen kanal | Test: EPOST-sperre sperrer EPOST, ikke SMS |
+| En sperre uten mottaker nektes | Test: `UgyldigSperre` kastes for GLOBAL, EPOSTDOMENE og KANAL uten mottaker |
+| Sperret kontakt stopper uten e-postadresse | Test: treff på `kontaktId` alene |
+| Hard bounce sperrer, myk bounce sperrer ikke | To tester, motsatt forventning |
+| Avmelding to ganger gir én sperre | Test: andre kall gir `opprettet: false`, samme id |
+| Opphevet sperre slettes ikke | Test: raden finnes igjen med `aktiv: false` |
+| Revisjonsmodulen har ingen endre- eller slettevei | Strukturell test over modulens eksporterte navn |
+| Hemmeligheter vaskes ut av revisjonsmetadata | Test: API-nøkkel og passord borte, `a@b.no` i behold |
+| Korrelasjonsid knytter en kjede sammen | Test: tre oppføringer, riktig rekkefølge |
+| Sperreliste-ruten svarer riktig over HTTP | Uten hemmelighet → **401**. Feil hemmelighet → **401**. Fri adresse → `tillatt: true`. Sperret adresse → `tillatt: false` med `AVMELDING`. Ugyldig type → **400**. Sperre uten mottaker → **400** |
 
 ---
 
@@ -95,6 +113,10 @@ Alvor etter skalaen BLOKKERER / HØY / MIDDELS / LAV.
 | F-005 | LAV | Port 3000 er opptatt av Tønsberglivet-prosjektet på denne maskinen | Dokumentert i `docs/manuell-oppsett.md` A5. VikingPilot bruker 3100 lokalt. Ikke berørt |
 | F-006 | ~~MIDDELS~~ | ~~`start-prod.mjs` brukte `new URL().pathname`, som gir `C:\C:\…` på Windows~~ | **Lukket.** Rettet med `fileURLToPath`. Feilet høyt ved første kjøring og ble funnet fordi jeg faktisk startet systemet |
 | F-007 | LAV | `@prisma/adapter-pg` 7.10.0 gir en `DEP0190`-advarsel om `shell: true` i `start-prod.mjs` | Åpent, ufarlig. `spawn` med `shell` brukes bare for `npx` på Windows |
+| F-008 | ~~HØY~~ | ~~En kanalsperre for e-post sperret også SMS~~ | **Lukket.** Treffregelen for adresse ignorerte kanal-feltet. Fanget av bruddforsøket «kanalsperre stopper bare sin egen kanal» |
+| F-009 | ~~BLOKKERER~~ | ~~En global sperre på én adresse sperret **hver** mottaker i hele systemet~~ | **Lukket.** Regelen var `{ type: "GLOBAL" }` uten adressesjekk. Ville stoppet all utsending. Fanget av kontrolltesten «en mottaker uten sperre slipper gjennom» |
+| F-010 | ~~HØY~~ | ~~En sperre uten mottaker ble godtatt, og sperret all utgående trafikk~~ | **Lukket.** Nektes nå med `UgyldigSperre`. Se B-018 |
+| F-011 | MIDDELS | `instanceof` krysser ikke modulgrenser pålitelig i Next.js — feilhåndtering ga 500 i stedet for 400 | **Lukket** med kode-sjekk. Se B-019. Kan gjelde andre feilklasser senere |
 
 **Ingen funn av alvor BLOKKERER eller HØY står åpent.** Stoppkriterium 8 er oppfylt for
 denne runden.

@@ -24,7 +24,7 @@ import {
   sjekkRateLimit,
 } from "@/lib/ratelimit";
 import { feilmelding, logg } from "@/lib/logg";
-import { leggTilSperre, sjekkSperreliste } from "@/lib/guards/sperreliste";
+import { erUgyldigSperre, leggTilSperre, sjekkSperreliste } from "@/lib/guards/sperreliste";
 import { skrivRevisjon } from "@/lib/revisjon";
 
 export const dynamic = "force-dynamic";
@@ -186,6 +186,12 @@ export async function POST(request: Request): Promise<Response> {
 
     return NextResponse.json({ id: resultat.id, ny: resultat.ny });
   } catch (feil) {
+    // En sperre uten mottaker er en feil i forespørselen, ikke i systemet.
+    // Derfor 400 og ikke 500 — kalleren skal kunne rette den selv.
+    if (erUgyldigSperre(feil)) {
+      return NextResponse.json({ feil: "ugyldig_sperre", melding: feil.message }, { status: 400 });
+    }
+
     logg.feil("Kunne ikke legge inn sperre", { feil });
     return NextResponse.json(
       { feil: "intern_feil", melding: feilmelding(feil) },

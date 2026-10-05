@@ -209,3 +209,31 @@ migrasjon som er vanskelig å reversere. Applikasjonslaget dekker behovet i denn
 **Kjent svakhet:** noen med direkte databasetilgang kan endre loggen. Det står i
 `docs/status.md` som F-003, alvor MIDDELS.
 **Status:** gjeldende, med kjent svakhet.
+
+---
+
+## B-018 — En sperre må peke på en mottaker
+
+**Dato:** fase 2
+**Beslutning:** `leggTilSperre()` nekter å opprette en sperre som ikke peker på minst én av
+`epost`, `epostDomene`, `kontaktId` eller `organisasjonId`. Den kaster `UgyldigSperre`.
+**Begrunnelse:** Uten dette kravet ble en sperre uten mottaker tolket som «sperr alt», og
+stoppet hele systemet fra å sende til noen. Feilen er lett å lage ved et uhell og vond å
+oppdage, fordi systemet ser ut til å virke — det nekter bare alt.
+**Konsekvens:** skal en hel kanal stenges, gjøres det i `KanalInnstilling` av et menneske.
+Det er en bevisst handling, ikke en sperrerad.
+**Status:** gjeldende.
+
+---
+
+## B-019 — Feilkoder i stedet for `instanceof` på tvers av modulgrenser
+
+**Dato:** fase 2
+**Beslutning:** `UgyldigSperre` har et konstant `kode`-felt, og ruten sjekker det med
+`erUgyldigSperre()` i stedet for `instanceof`.
+**Begrunnelse:** Next.js pakker ruter og delte moduler hver for seg. Da kan to ulike
+klasse-identiteter av samme klasse ligge i samme prosess, og `instanceof` feiler selv om
+feilen er riktig. Det skjedde: ruten svarte 500 i stedet for 400 helt til vi byttet til
+kode-sjekk. Vi fant det bare fordi vi kalte ruten på ekte i stedet for å lese koden.
+**Status:** gjeldende. Gjelder all feilhåndtering som krysser en modulgrense.
+

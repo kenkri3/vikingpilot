@@ -24,6 +24,7 @@ import {
   opphevSperre,
   normaliserEpost,
   epostDomene,
+  erUgyldigSperre,
 } from "@/lib/guards/sperreliste";
 import {
   kanSende,
@@ -176,6 +177,25 @@ describe("sperrelister — bruddforsøk", { skip: !harDatabase ? "DATABASE_URL m
       () => leggTilSperre({ type: "KANAL", grunn: "MANUELL", kanal: "SMS", kilde: KILDE }),
       /må peke på minst én mottaker/,
     );
+  });
+
+  test("erUgyldigSperre kjenner igjen feilen uten instanceof", async () => {
+    // `instanceof` er ikke til å stole på her. Next.js pakker ruter og delte
+    // moduler hver for seg, og da kan to ulike klasse-identiteter av samme klasse
+    // ligge i samme prosess. Da svarte ruten 500 i stedet for 400, selv om
+    // feilen var riktig. Vi oppdaget det ved å kalle ruten på ekte.
+    try {
+      await leggTilSperre({ type: "GLOBAL", grunn: "MANUELL", kilde: KILDE });
+      assert.fail("skulle kastet");
+    } catch (feil) {
+      assert.ok(erUgyldigSperre(feil), "erUgyldigSperre kjente ikke igjen sin egen feil");
+
+      // Og den skal ikke godta en vilkårlig feil.
+      assert.equal(erUgyldigSperre(new Error("noe annet")), false);
+      assert.equal(erUgyldigSperre(null), false);
+      assert.equal(erUgyldigSperre("streng"), false);
+      assert.equal(erUgyldigSperre({ kode: "NOE_ANNET" }), false);
+    }
   });
 
   // -------------------------------------------------------------------------

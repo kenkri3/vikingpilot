@@ -17,8 +17,8 @@
 |---|---|---|
 | 0 | Kartlegg, les spesifikasjonen, skriv planen med stoppkriterier | **Fullført** — med to avvik, se A-002 og A-003 |
 | 1 | Skjelett: stack, skjema, migreringer, innlogging, tomt dashbord, deploybart | **Fullført og verifisert** — se bevisene under |
-| 2 | Kjernedata, sperrelister, revisjonslogg | Ikke startet |
-| 3 | Enhetsregister-pipeline og utsendingsvakt | Ikke startet |
+| 2 | Kjernedata, sperrelister, revisjonslogg | **Fullført og verifisert** — se bevisene under |
+| 3 | Enhetsregister-pipeline og utsendingsvakt | Neste |
 | 4 | Sekvensmotor med tørrkjøring, og godkjenningskø | Ikke startet |
 | 5 | Herding: frødata, sjekkeliste, dokumentasjon, manuell liste | Ikke startet |
 
@@ -117,21 +117,43 @@ agenten kan ikke velge å vente kortere.
 
 ## Fase 2 — Kjernedata, sperrelister, revisjonslogg
 
-**Mål:** dataene finnes, og ingenting kan sendes til noen som står på en sperreliste.
+**Status: fullført og verifisert.** Kjernedataene lå allerede i skjemaet fra fase 1.
 
-**Steg:**
+**Steg og resultat:**
 
-1. Alle kjernemodeller med relasjoner: organisasjoner, kontakter, prospekter, kunder,
-   dialoger, produkter med SKU og pris, avtaler, oppgaver
-2. `Sperreliste` med kanal og grunn. Global, på tvers av kanaler
-3. Automatisk sperre ved: eksisterende kunde, aktiv dialog, avmelding, bounce
-4. `sjekkSperreliste()` som tjenestefunksjon, og ruten rundt
-5. `Revisjon`: skriv, aldri endre. Hver utgående handling med grunnlag, tidspunkt,
-   resultat og kilde
-6. Bruddforsøk: prøv å sende til en sperret adresse og bevis at det avvises
+1. ✅ Kjernemodeller med relasjoner — alle tabellene finnes fra fase 1
+2. ✅ `Sperreliste` med kanal og grunn
+3. ✅ Automatiske sperrer i `src/lib/guards/automatisk.ts`: avmelding, hard bounce,
+   klage, eksisterende kunde, aktiv dialog, konkurs, offentlig sektor
+4. ✅ `sjekkSperreliste()` og `kanSende()` som tjenestefunksjoner, med ruten
+   `/api/sperrelister` rundt
+5. ✅ `Revisjon`: skriv, aldri endre. Med korrelasjonsid for å knytte kjeder sammen
+6. ✅ 27 bruddforsøk i `tests/sperrelister.test.ts`
 
-**Stoppkriterium:** en sperret adresse kan ikke sendes til, uansett hvilken kodevei som
-prøves. Beviset ligger i `npm run test:brudd`.
+**Bevis:** se `docs/status.md`, avsnittet «Fase 2».
+
+**Tre ekte feil funnet av bruddforsøkene:**
+
+| Feil | Konsekvens | Fanget av |
+|---|---|---|
+| Kanalsperre for e-post sperret også SMS | Over-sperring på tvers av kanaler | «kanalsperre stopper bare sin egen kanal» |
+| Global sperre på én adresse sperret **alle** mottakere | All utsending ville stoppet | «en mottaker uten sperre slipper gjennom» |
+| Sperre uten mottaker ble godtatt | All utgående trafikk ville stoppet | Ny test etter at feilen ble forstått |
+
+Alle tre var stille feil: systemet ville sett ut til å virke, men nektet alt. De er nå
+låst fast som faste bruddforsøk.
+
+**Én feil funnet ved å kalle ruten på ekte:** `instanceof` krysser ikke modulgrenser
+pålitelig i Next.js, så en klientfeil ga 500 i stedet for 400. Rettet med en konstant
+feilkode. Se B-019.
+
+**Designvalg som må huskes:**
+
+- En sperre må peke på en mottaker. Å stenge en hel kanal gjøres i `KanalInnstilling`.
+- `kanSende()` sjekker kanalen **før** sperrelisten. Er kanalen av, vurderes ikke
+  mottakeren engang.
+- Myk bounce sperrer ikke. Full postkasse er ikke det samme som ukjent adresse.
+- Oppheving setter `aktiv = false`. Vi sletter aldri en sperre.
 
 ---
 
@@ -223,23 +245,8 @@ og `LAGT-TIL-GRUNN.md`.
 kode. **Det er et ærlig svar, og det betyr at den autonome delen ikke kan fortsette før
 skallet virker.**
 
-**Blokkert av:** F-001 (skall dødt) og F-002 (byggerot, krever din aksept).
-
-### Neste runde — fase 2
-
-Kjernedata i bruk, sperrelister og revisjonslogg. Begynn med `src/lib/guards/sperreliste.ts`
-og tjenestefunksjonen `sjekkSperreliste()`, med ruten rundt. Deretter bruddforsøk i
-`tests/`.
-
-**Rekkefølgen som er låst:** fase 2 → 3 → 4 → 5. Ikke hopp til fase 4 fordi den er
-morsommere; fase 3 sin utsendingsvakt er det som gjør fase 4 trygg å bygge.
-
-**Svar som trengs før fase 3:** S1, S2 og S4 i `docs/aapne-sporsmal.md`.
-Fase 2 kan bygges helt uten dem.
-
----
-
-## Runde logg
+**Blokkert av:** F-001 (skall dødt) og F-002 (byggerot, krever din aksept). Begge er siden
+lukket — se runde 2.
 
 ### Runde 2 — fase 1
 
@@ -277,6 +284,49 @@ Det er en reell endring fra «ingen kode» til «et system de kan åpne og forst
 - Aksept av byggerot `C:\VikingPilot` i stedet for `G:` (`LAGT-TIL-GRUNN.md` A-001)
 - Svar på S1, S2, S4 før fase 3
 
-### Neste runde — hvis ingenting endres
+---
 
-Fase 2. Sperrelister og revisjonslogg, med bruddforsøk.
+### Runde 3 — fase 2
+
+**Gjort:** Sperrelister og revisjonslogg. `sjekkSperreliste()`, `kanSende()`, automatiske
+sperrer, revisjonslogg med korrelasjonsid, ruten `/api/sperrelister`, 27 bruddforsøk, og
+utvidet sjekkeliste fra 26 til 32 kontroller.
+
+**Endret for en bruker av systemet:** Ja, konkret.
+
+- En mottaker som har meldt seg av kan nå ikke kontaktes, og systemet sier hvorfor.
+- Hard bounce sperrer adressen automatisk. Myk bounce gjør det ikke — det var et bevisst
+  valg, ikke en forglemmelse.
+- Hver utgående handling kan spores med grunnlag, resultat og kilde, knyttet sammen i en
+  kjede fra utkast til sending.
+- Agentens verktøyflate har fått sitt andre endepunkt: `/api/sperrelister`.
+
+Det viktigste er likevel usynlig for brukeren: **tre feil som ville stoppet all utsending
+er funnet og lukket før de nådde produksjon.**
+
+**Rettet egne feil underveis:**
+
+1. En kanalsperre lakk til andre kanaler.
+2. En global sperre på én adresse sperret alle.
+3. Sperrer uten mottaker ble godtatt.
+4. `instanceof` virket ikke på tvers av Next.js' modulgrenser.
+5. Testdataene mine lakk mellom tester — to ganger. Domenesperren og den globale sperren
+   traff naboene. Isolerte hvert tilfelle i eget underdomene.
+6. Sjekkelistens myk-bounce-sjekk feilet fordi den brukte en adresse som allerede var
+   sperret av en tidligere sjekk i samme kjøring.
+
+**Blokkert av:** ingenting.
+
+---
+
+### Neste runde — fase 3
+
+Enhetsregister-pipelinen og utsendingsvakten. Begynn med `src/lib/enhetsregister/`:
+henting med ærlig «ikke konfigurert», deretter `normalize.ts` og `filter.ts`.
+Deretter `src/lib/guards/volum.ts`, `oppvarming.ts` og `idempotens.ts`.
+
+**Fase 3 blokkeres delvis av S1, S2 og S4.** Normalisering, filtrering og selve
+volumtallene kan bygges med frødata først, så svarene haster ikke for å komme i gang.
+
+**Rekkefølgen som er låst:** fase 2 → 3 → 4 → 5. Ikke hopp til fase 4 fordi den er
+morsommere; fase 3 sin utsendingsvakt er det som gjør fase 4 trygg å bygge.

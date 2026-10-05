@@ -238,12 +238,33 @@ export type SperreInn = {
   utloeper?: Date | null;
 };
 
-/** Felten vi kaster når en sperre ikke har noe å treffe. */
+/**
+ * Felten vi kaster når en sperre ikke har noe å treffe.
+ *
+ * `kode` finnes fordi `instanceof` ikke er til å stole på her: Next.js pakker
+ * ruter og delte moduler hver for seg, og da kan det ligge to ulike
+ * klasse-identiteter av samme klasse i samme prosess. Da feiler instanceof selv
+ * om feilen er riktig. En streng kode overlever bundling.
+ * Det oppdaget vi ved å kalle ruten på ekte.
+ */
+export const UGYLDIG_SPERRE_KODE = "UGYLDIG_SPERRE";
+
 export class UgyldigSperre extends Error {
+  readonly kode = UGYLDIG_SPERRE_KODE;
+
   constructor(melding: string) {
     super(melding);
     this.name = "UgyldigSperre";
   }
+}
+
+/** Sann hvis feilen er en UgyldigSperre, uansett hvilken modulkopi den kom fra. */
+export function erUgyldigSperre(feil: unknown): feil is UgyldigSperre {
+  return (
+    typeof feil === "object" &&
+    feil !== null &&
+    (feil as { kode?: unknown }).kode === UGYLDIG_SPERRE_KODE
+  );
 }
 
 /**
