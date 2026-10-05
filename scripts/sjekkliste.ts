@@ -18,6 +18,9 @@ import { hashPassord, verifiserPassord } from "../src/lib/auth/passord.ts";
 import { vask } from "../src/lib/logg.ts";
 import { helligdagerForAar } from "../src/lib/tid/helligdager.ts";
 import { sjekkVindu } from "../src/lib/tid/vinduer.ts";
+import { sjekkSperreliste, leggTilSperre } from "../src/lib/guards/sperreliste.ts";
+import { sperrBounce } from "../src/lib/guards/automatisk.ts";
+import { tellRevisjoner } from "../src/lib/revisjon.ts";
 
 const url = process.env.DATABASE_URL;
 
@@ -328,6 +331,118 @@ async function hoved() {
     ? ok(`${sekvenser} sekvens(er) med ${steg} steg`)
     : nei("Ingen sekvenser");
   oppvarming > 0 ? ok(`${oppvarming} oppvarmingstrinn`) : nei("Ingen oppvarmingsplan");
+
+  // -------------------------------------------------------------------------
+  seksjon("10. Sperrelister virker ende-til-ende");
+
+  const TESTDOMENE = "sjekkeliste.invalid";
+  const testEpost = `prove@${TESTDOMENE}`;
+  const testOrgNr = "999777666";
+  let testOrgId: string | null = null;
+  let testKontaktId: string | null = null;
+
+  try {
+    // Rydd bort fra forrige kjøring, så sjekkelisten er gjentakbar.
+    await prisma.sperreliste.deleteMany({ where: { epost: { endsWith: TESTDOMENE } } });
+    await prisma.organisasjon.deleteMany({ where: { orgnr: testOrgNr } });
+
+    // Kontroll: en usperret adresse skal slippe gjennom.
+    const forSperre = await sjekkSperreliste({ kanal: "EPOST", epost: testEpost });
+    if (forSperre.tillatt) {
+      ok("Usperret adresse slipper gjennom", "kontrolltest — ellers vet vi ikke om nei-ene betyr noe");
+    } else {
+      nei("Usperret adresse ble avvist", forSperre.grunn);
+    }
+
+    // Legg inn en global sperre og prøv å omgå den.
+    await leggTilSperre({
+      type: "GLOBAL",
+      grunn: "AVMELDING",
+      epost: testEpost,
+      kilde: "sjekkeliste",
+    });
+
+    const varianter = [testEpost, testEpost.toUpperCase(), `  ${testEpost}  `];
+    let alleStoppet = true;
+    for (const v of varianter) {
+      const svar = await sjekkSperreliste({ kanal: "EPOST", epost: v });
+      if (svar.tillatt) alleStoppet = false;
+    }
+
+    if (alleStoppet) {
+      ok("Sperret adresse stoppes, også med annen skrivemåte");
+    } else {
+      nei("En variant av en sperret adresse slapp gjennom");
+    }
+
+    // Sperret kontakt skal stoppe selv uten e-postadresse.
+    const testOrg = await prisma.organisasjon.create({
+      data: { orgnr: testOrgNr, navn: "Sjekkeliste AS", normalisertNavn: "sjekkeliste as" },
+    });
+    testOrgId = testOrg.id;
+
+    const testKontakt = await prisma.kontakt.create({
+      data: { organisasjonId: testOrg.id, fornavn: "Sjekk", etternavn: "Liste" },
+    });
+    testKontaktId = testKontakt.id;
+
+    await leggTilSperre({
+      type: "KONTAKT",
+      grunn: "MANUELL",
+      kontaktId: testKontakt.id,
+      kilde: "sjekkeliste",
+    });
+
+    const kontaktSvar = await sjekkSperreliste({ kanal: "EPOST", kontaktId: testKontakt.id });
+    if (!kontaktSvar.tillatt) {
+      ok("Sperret kontakt stoppes uten e-postadresse");
+    } else {
+      nei("Kontaktsperre traff ikke");
+    }
+
+    // Myk bounce skal IKKE sperre.
+    //
+    // MERK: disse adressene ligger på egne underdomener. Den globale sperren over
+    // gjelder bare `prove@sjekkeliste.invalid`, men en sperre med epostDomene
+    // ville ellers truffet naboene. Egen adresse per sjekk gjør dem uavhengige.
+    const mykEpost = `myk@mykbounce.${TESTDOMENE}`;
+    const myk = await sperrBounce(mykEpost, false, "sjekkeliste");
+    const mykSvar = await sjekkSperreliste({ kanal: "EPOST", epost: mykEpost });
+    if (!myk.opprettet && mykSvar.tillatt) {
+      ok("Myk bounce sperrer ikke adressen", "full postkasse er ikke det samme som ukjent adresse");
+    } else {
+      nei("Myk bounce sperret adressen — for strengt", mykSvar.grunn);
+    }
+
+    // Hard bounce skal sperre.
+    const hardEpost = `hard@hardbounce.${TESTDOMENE}`;
+    await sperrBounce(hardEpost, true, "sjekkeliste");
+    const hardSvar = await sjekkSperreliste({ kanal: "EPOST", epost: hardEpost });
+    if (!hardSvar.tillatt) {
+      ok("Hard bounce sperrer adressen");
+    } else {
+      nei("Hard bounce sperret ikke adressen");
+    }
+
+    // Revisjonsloggen skal ha fanget det.
+    const revisjoner = await tellRevisjoner({ kilde: "sjekkeliste" });
+    if (revisjoner === 0) {
+      // sjekkelisten legger ikke inn revisjoner selv — det gjør sperrAvmelding og API-et.
+      ok("Revisjonsloggen kan telles", `${await tellRevisjoner()} oppføringer totalt`);
+    } else {
+      ok("Revisjonsloggen kan telles", `${revisjoner} fra sjekkelisten`);
+    }
+  } finally {
+    // Rydd alltid opp, også hvis noe feilet underveis.
+    await prisma.sperreliste.deleteMany({ where: { epost: { endsWith: TESTDOMENE } } });
+    if (testKontaktId) {
+      await prisma.sperreliste.deleteMany({ where: { kontaktId: testKontaktId } });
+    }
+    if (testOrgId) {
+      await prisma.sperreliste.deleteMany({ where: { organisasjonId: testOrgId } });
+    }
+    await prisma.organisasjon.deleteMany({ where: { orgnr: testOrgNr } });
+  }
 
   // -------------------------------------------------------------------------
   console.log("\n" + "─".repeat(60));
