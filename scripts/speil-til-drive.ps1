@@ -7,7 +7,10 @@
 # Derfor: bygg på C:, speil til G: så du fortsatt har koden i Google Drive.
 #
 # Bruk:
-#   pwsh -File scripts/speil-til-drive.ps1
+#   .\scripts\speil-til-drive.ps1
+#
+# Merk: Windows har Windows PowerShell 5.1 som «powershell», ikke «pwsh».
+# Kommandoen «pwsh» finnes bare hvis PowerShell 7 er installert separat.
 
 param(
     [string]$Fra = "C:\VikingPilot",
@@ -72,3 +75,7 @@ if ($tomme.Count -gt 0) {
 Write-Host "Ingen tomme filer. Speilingen er hel."
 Write-Host ""
 Write-Host "Husk: bygg alltid på $Fra, aldri på $Til."
+
+# Uten denne arver scriptet robocopy sin sluttekst, som er 0–3 selv naar alt gikk bra.
+# Det gjorde at en vellykket speiling sa «feilet».
+exit 0
