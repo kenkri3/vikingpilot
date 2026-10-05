@@ -31,6 +31,24 @@ import { byggIdempotensNokkel } from "../src/lib/guards/idempotens.ts";
 import { koStatus } from "../src/lib/godkjenning/ko.ts";
 import { regnPlanlagtTid } from "../src/lib/sekvens/motor.ts";
 import { tolkCsv, importerKontakter, erImportFeil } from "../src/lib/kontakter/import.ts";
+import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import * as stiModul from "node:path";
+
+/**
+ * Leser en fil, eller gir null hvis den ikke finnes.
+ *
+ * Brukes av sjekken som verifiserer at importene i produksjonskjeden peker på
+ * filer som faktisk finnes. Den sjekken finnes fordi to feil har hatt sitt
+ * opphav i Docker-bildet, der en fil manglet — og ingen test bygger bildet.
+ */
+async function lestFil(sti: string): Promise<string | null> {
+  try {
+    return await readFile(sti, "utf8");
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Bygger en gyldig, privat virksomhet for filterkontrollene.
@@ -654,6 +672,61 @@ async function hoved() {
     nei(
       `${sperrerUtenMottaker} aktive sperrer mangler mottaker`,
       "de stopper all utgående trafikk",
+    );
+  }
+
+  // PEKER ALLE IMPORTENE I PRODUKSJONSKJEDEN PÅ NOE SOM FINNES?
+  //
+  // Dette er den eneste sjekken som kan fange den feilklassen vi har hatt to av:
+  // koden kjører lokalt, men en fil mangler i Docker-bildet. Ingen test bygger
+  // bildet, fordi Docker ikke finnes her. Men vi kan sjekke at hver import i
+  // kjeden faktisk peker på en fil — og da fanger vi en manglende eller feilstavet
+  // fil før deploy, ikke etter.
+  //
+  // F-039 var nettopp dette: grunndata.mjs importerte src/lib/auth/passord.ts,
+  // som ikke ble kopiert inn i kjøresteget. Feilen dukket først i Deploy Logs.
+  const produksjonsfiler = [
+    "scripts/start-prod.mjs",
+    "scripts/oppsett.mjs",
+    "scripts/grunndata.mjs",
+    "scripts/bruker.mjs",
+  ];
+
+  const manglendeFiler: string[] = [];
+
+  for (const fil of produksjonsfiler) {
+    const innhold = await lestFil(fil);
+    if (innhold === null) {
+      manglendeFiler.push(fil);
+      continue;
+    }
+
+    // Fanger både `import x from "..."` og `await import("...")`.
+    const importer = [
+      ...innhold.matchAll(/(?:from\s+|await\s+import\(\s*)["']([^"']+)["']/g),
+    ].map((m) => m[1]!);
+
+    for (const imp of importer) {
+      // Bare relative stier er våre egne filer. Pakker og node:-moduler hopper vi over.
+      if (!imp.startsWith(".")) continue;
+
+      const opplosst = stiModul.resolve(stiModul.dirname(stiModul.resolve(fil)), imp);
+
+      if (!existsSync(opplosst)) {
+        manglendeFiler.push(`${fil} → ${imp}`);
+      }
+    }
+  }
+
+  if (manglendeFiler.length === 0) {
+    ok(
+      "Alle importer i produksjonskjeden peker på filer som finnes",
+      `${produksjonsfiler.length} filer sjekket`,
+    );
+  } else {
+    nei(
+      `${manglendeFiler.length} import(er) i produksjonskjeden mangler fil`,
+      manglendeFiler.join("; "),
     );
   }
 
