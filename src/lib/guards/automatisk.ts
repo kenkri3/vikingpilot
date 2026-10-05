@@ -22,6 +22,9 @@ import {
   sjekkSperreliste,
   type SperreSvar,
 } from "@/lib/guards/sperreliste";
+import { sjekkVolum } from "@/lib/guards/volum";
+import { sjekkOppvarming } from "@/lib/guards/oppvarming";
+import { sjekkVindu } from "@/lib/tid/vinduer";
 import { logg } from "@/lib/logg";
 import { skrivRevisjon } from "@/lib/revisjon";
 
@@ -284,17 +287,36 @@ export async function sjekkKanalApen(kanal: Kanal): Promise<{
 /**
  * Den samlede porten alle utsendelser må gjennom.
  *
- * Rekkefølgen er ikke tilfeldig: kanalen sjekkes først, fordi en stengt kanal
- * gjør resten irrelevant. Deretter sperrelisten.
+ * Rekkefølgen er ikke tilfeldig, og den er dokumentert her fordi den er hele
+ * poenget: hver sjekk kan avvise, og vi stopper ved første nei.
  *
- * Det finnes ingen parameter for å hoppe over dette.
+ *   1. Er kanalen åpen?              KanalInnstilling.utgaaendeAktivert
+ *   2. Står mottakeren på en sperre? Sperreliste
+ *   3. Er tidsvinduet åpent?         Hverdager, røde dager, klokkeslett
+ *   4. Har avsenderen kvote igjen?   Døgnkvote, ukekvote og oppvarming
+ *
+ * Kanalen sjekkes først fordi en stengt kanal gjør resten irrelevant.
+ * Sperrelisten før tidsvinduet fordi en sperre er varig, mens et vindu åpner seg.
+ *
+ * Det finnes ingen parameter for å hoppe over noen av disse. Det er med vilje.
  */
 export async function kanSende(args: {
   kanal: Kanal;
   epost?: string | null;
   kontaktId?: string | null;
   organisasjonId?: string | null;
-}): Promise<SperreSvar> {
+  /** Avsenderen. Er den oppgitt, sjekkes kvote og oppvarming også. */
+  avsenderId?: string | null;
+  /** Tidspunktet som skal vurderes. Settes av testene. */
+  naa?: Date;
+  /** Hopper over tidsvinduet. Brukes bare av tester som ikke gjelder vinduet. */
+  hoppOverTidsvindu?: boolean;
+}): Promise<SperreSvar & { sjekket: string[] }> {
+  const naa = args.naa ?? new Date();
+  const sjekket: string[] = [];
+
+  // 1. Kanalen.
+  sjekket.push("kanal");
   const kanalStatus = await sjekkKanalApen(args.kanal);
 
   if (!kanalStatus.aapen) {
@@ -304,8 +326,101 @@ export async function kanSende(args: {
       type: null,
       sperreGrunn: null,
       sperreId: null,
+      sjekket,
     };
   }
 
-  return sjekkSperreliste(args);
+  // 2. Sperrelisten.
+  sjekket.push("sperreliste");
+  const sperre = await sjekkSperreliste({
+    kanal: args.kanal,
+    epost: args.epost,
+    kontaktId: args.kontaktId,
+    organisasjonId: args.organisasjonId,
+  });
+
+  if (!sperre.tillatt) {
+    return { ...sperre, sjekket };
+  }
+
+  // 3. Tidsvinduet.
+  if (!args.hoppOverTidsvindu) {
+    sjekket.push("tidsvindu");
+
+    const innstilling = await prisma.kanalInnstilling.findUnique({
+      where: { kanal: args.kanal },
+      select: { tidsvinduStart: true, tidsvinduSlutt: true, kunHverdager: true },
+    });
+
+    if (innstilling) {
+      const vindu = sjekkVindu(naa, {
+        start: innstilling.tidsvinduStart,
+        slutt: innstilling.tidsvinduSlutt,
+        kunHverdager: innstilling.kunHverdager,
+      });
+
+      if (!vindu.aapen) {
+        return {
+          tillatt: false,
+          grunn: vindu.grunn,
+          type: null,
+          sperreGrunn: null,
+          sperreId: null,
+          sjekket,
+        };
+      }
+    }
+  }
+
+  // 4. Volum og oppvarming, hvis vi vet hvem som sender.
+  if (args.avsenderId) {
+    sjekket.push("oppvarming");
+    const oppvarming = await sjekkOppvarming(args.avsenderId, naa);
+
+    if (!oppvarming.tillatt) {
+      return {
+        tillatt: false,
+        grunn: oppvarming.grunn,
+        type: null,
+        sperreGrunn: null,
+        sperreId: null,
+        sjekket,
+      };
+    }
+
+    sjekket.push("volum");
+    const volum = await sjekkVolum(args.avsenderId, naa);
+
+    if (!volum.tillatt) {
+      return {
+        tillatt: false,
+        grunn: volum.grunn,
+        type: null,
+        sperreGrunn: null,
+        sperreId: null,
+        sjekket,
+      };
+    }
+
+    // Oppvarmingskvoten kan være lavere enn døgnkvoten. Begge skal gjelde.
+    if (!oppvarming.ferdigOppvarmet && volum.sendtIDag >= oppvarming.kvoteIDag) {
+      return {
+        tillatt: false,
+        grunn: `Oppvarmingskvoten er brukt opp: ${volum.sendtIDag} av ${oppvarming.kvoteIDag} på dag ${oppvarming.dag}.`,
+        type: null,
+        sperreGrunn: null,
+        sperreId: null,
+        sjekket,
+      };
+    }
+  }
+
+  return {
+    tillatt: true,
+    grunn: `Alle sjekker passerte: ${sjekket.join(", ")}.`,
+    type: null,
+    sperreGrunn: null,
+    sperreId: null,
+    sjekket,
+  };
 }

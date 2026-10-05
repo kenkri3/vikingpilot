@@ -28,6 +28,8 @@ import {
 import { vurderVirksomhet, type FilterKonfig } from "../src/lib/enhetsregister/filter.ts";
 import { kvoteForDag } from "../src/lib/guards/oppvarming.ts";
 import { byggIdempotensNokkel } from "../src/lib/guards/idempotens.ts";
+import { koStatus } from "../src/lib/godkjenning/ko.ts";
+import { regnPlanlagtTid } from "../src/lib/sekvens/motor.ts";
 
 /**
  * Bygger en gyldig, privat virksomhet for filterkontrollene.
@@ -638,6 +640,86 @@ async function hoved() {
     ok("Ingen utsending er noen gang sendt", "alt er av");
   } else {
     nei(`${sendtFaktisk} utsendinger står som sendt`);
+  }
+
+  // -------------------------------------------------------------------------
+  seksjon("13. Godkjenningskøen og sekvensmotoren");
+
+  // Ingen melding skal være sendt. Dette er systemets viktigste invariant.
+  const sendteMeldinger = await prisma.dialogMelding.count({ where: { status: "SENDT" } });
+  if (sendteMeldinger === 0) {
+    ok("Ingen dialogmelding er sendt", "alt er av");
+  } else {
+    nei(`${sendteMeldinger} dialogmeldinger står som SENDT`);
+  }
+
+  // Ingen melding skal være godkjent uten at et menneske har bestemt.
+  const godkjenteUtenBeslutning = await prisma.dialogMelding.count({
+    where: { status: "GODKJENT", godkjenning: { beslutninger: { none: {} } } },
+  });
+  if (godkjenteUtenBeslutning === 0) {
+    ok("Ingen melding er godkjent uten at et menneske har bestemt");
+  } else {
+    nei(
+      `${godkjenteUtenBeslutning} meldinger står som godkjent uten en beslutning`,
+      "køen er omgått",
+    );
+  }
+
+  // Enhver godkjenning som er avgjort, skal ha en navngitt beslutning.
+  const avgjorteUtenNavn = await prisma.godkjenning.count({
+    where: {
+      status: { in: ["GODKJENT", "AVVIST"] },
+      beslutninger: { none: {} },
+    },
+  });
+  if (avgjorteUtenNavn === 0) {
+    ok("Alle avgjorte godkjenninger har et navn og et tidspunkt");
+  } else {
+    nei(`${avgjorteUtenNavn} godkjenninger er avgjort uten en registrert beslutning`);
+  }
+
+  // Ingen utsending skal stå som sendt uten en godkjenning bak seg.
+  const utsendingerUtenGodkjenning = await prisma.utsending.count({
+    where: { status: "SENDT", dialogMelding: { godkjenning: null } },
+  });
+  if (utsendingerUtenGodkjenning === 0) {
+    ok("Ingen utsending er sendt uten en godkjenning");
+  } else {
+    nei(`${utsendingerUtenGodkjenning} utsendinger er sendt uten godkjenning`);
+  }
+
+  const ko = await koStatus();
+  ok(
+    "Godkjenningskøen kan leses",
+    `${ko.venter} venter, ${ko.godkjent} godkjent, ${ko.avvist} avvist`,
+  );
+
+  // Sekvensmotoren skal ikke ha noen vei til å sende.
+  const motorModul = await import("../src/lib/sekvens/motor.ts");
+  const motorEksporter = Object.keys(motorModul);
+  const serUtSomSending = motorEksporter.filter((n) => /^(send|lever|utsend)/i.test(n));
+
+  if (serUtSomSending.length === 0) {
+    ok("Sekvensmotoren eksporterer ingen sendefunksjon", "den lager bare utkast");
+  } else {
+    nei(
+      "Sekvensmotoren eksporterer noe som ser ut som sending",
+      serUtSomSending.join(", "),
+    );
+  }
+
+  // Planlagt tid skal regnes fra forrige steg, ikke fra starten.
+  const t0 = new Date(Date.UTC(2026, 5, 1, 8));
+  const t1 = new Date(Date.UTC(2026, 5, 2, 8));
+  const planlagt = regnPlanlagtTid(t0, { rekkefolge: 2, ventetidTimer: 72 }, [
+    { rekkefolge: 1, utfortTid: t1 },
+  ]);
+
+  if (planlagt.toISOString() === "2026-06-05T08:00:00.000Z") {
+    ok("Ventetid regnes fra forrige steg ble utført");
+  } else {
+    nei("Ventetiden regnes feil", planlagt.toISOString());
   }
 
   // -------------------------------------------------------------------------
