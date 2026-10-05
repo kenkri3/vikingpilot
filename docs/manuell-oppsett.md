@@ -287,6 +287,41 @@ npm run forhåndssjekk
 Den sier blant annet om skjemaet er satt opp, om frødataene finnes, og at all utgående
 trafikk er av. Er noe galt, sier den hva.
 
+### Se på oppstartsloggen først
+
+Åpne **Deploy Logs** på app-tjenesten i Railway. Du skal se disse linjene i denne
+rekkefølgen:
+
+```
+Kjører migreringer …
+Migreringer fullført.
+Setter opp grunndata …
+Grunndata er på plass: 6 kanaler, alle med utgående AV, 4 integrasjoner, …
+Starter VikingPilot på port …
+```
+
+**Står det noe annet, er det der feilen er.** De vanligste:
+
+| Hva du ser | Hva det betyr |
+|---|---|
+| `DATABASE_URL mangler` | Variabelen er ikke lagt inn på app-tjenesten. Se B2 |
+| `Migrering feilet` | Feil i `DATABASE_URL`, eller Postgres-tjenesten kjører ikke |
+| `Kunne ikke sette opp grunndata` | Tjenesten starter likevel. Kjør `node scripts/oppsett.mjs` i Shell-fanen |
+| Ingenting i det hele tatt | Bygget feilet. Se Build Logs |
+
+### Sjekk at tjenesten svarer
+
+Åpne `https://DIN-RAILWAY-URL/api/helse` i nettleseren. Du skal få `"status": "ok"` og
+`"noenAapne": false`.
+
+**Dette er den avgjørende prøven på at bildet virker.** Docker kan ikke testes på
+maskinen der systemet ble bygget, så dette er første gang hele bildet — Node 22,
+Prisma-klienten, migreringene og oppstartsjobben — faktisk kjøres sammen. Svarer
+helsesjekken 200, virker alle de delene.
+
+Gjør den ikke det, kopier linjene fra Deploy Logs inn i en samtale, så er feilen
+sannsynligvis lett å peke på.
+
 ---
 
 ## B8. Slå på utgående trafikk

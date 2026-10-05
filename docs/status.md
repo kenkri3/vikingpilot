@@ -130,6 +130,7 @@ Påstander jeg tror er riktige, men ikke har bevist.
 | Antakelse | Hvorfor jeg tror det | Hvordan den verifiseres |
 |---|---|---|
 | Dockerfile bygger og kjører på Railway | Den bygger lokalt med `npm ci` + `prisma generate` + `next build` | Første deploy, krever din Railway-konto |
+| Prisma-motoren finner riktig binær på Alpine/musl | Alpine bruker musl, og `npm ci` kjører inne i bildet slik at `prisma generate` henter binæren der | Første deploy. Dette er den mest sannsynlige feilkilden i bildet, fordi den ikke kan testes uten Docker |
 | `prisma migrate deploy` virker mot Railway-Postgres | Samme kommando virket lokalt mot tom database | Første deploy |
 | Org.nr 933 851 222 er riktig | Oppgitt i oppdraget | Slå opp i Enhetsregisteret når nøkkel finnes |
 | Enhetsregisteret kan nås med API-nøkkel | Allment kjent | Fase 3 |
@@ -218,6 +219,35 @@ Etter hver runde:
 2. Legg til nye antakelser eksplisitt — ikke la dem ligge implisitt i koden.
 3. Oppdater «åpne funn».
 4. Stoppkriterium 8 er oppfylt først når ingen rader står med BLOKKERER eller HØY.
+
+---
+
+## Produksjonsstien verifisert under Node 22 — runde 9
+
+Den viktigste påstanden jeg ikke kunne bevise før — fordi Docker ikke finnes på denne
+maskinen — var at byttet fra `node:20` til `node:22` faktisk løser problemet. Node 20 kan
+ikke lese TypeScript, og den genererte Prisma-klienten **er** TypeScript. Var påstanden
+feil, ville Railway-deployen krasjet.
+
+Den er nå bevist med en ekte Node 22, lastet ned fra nodejs.org.
+
+| Påstand | Bevis |
+|---|---|
+| Node 22 laster den genererte klienten uten flagg | `node -e "import('./src/generated/prisma/client.ts')"` under **v22.23.3** → «LASTET OK», ingen advarsel om eksperimentelt flagg |
+| `scripts/oppsett.mjs` virker under Node 22 | Kjørt med Node 22 → 6 kanaler, 4 integrasjoner, 5 cron-jobber, 1 målgruppe, 2 produkter, sekvens med 3 steg. **exit 0** |
+| `scripts/bruker.mjs` virker under Node 22 | Opprettet bruker. **exit 0** |
+| **Hele produksjonsoppstarten virker under Node 22** | `node22 scripts/start-prod.mjs` → migreringer fullført, grunndata på plass, «Ready in 5.7s», **ingenting i stderr**. `/api/helse` → **HTTP 200**, `database=ok`, `noenAapne=false` |
+
+**Hva som fortsatt ikke er bevist, og hvorfor:** selve Docker-**bygget**. Docker er ikke
+installert her, så jeg kan ikke bygge bildet. Det som er bevist, er at hver bestanddel
+bildet kjører — Node 22, den genererte klienten, oppstartsjobben, migreringene og
+serveren — virker under den Node-versjonen bildet bruker. Det som gjenstår er `apk add`,
+filkopieringen, og at Prisma-motoren finner riktig binær for musl/Alpine.
+
+Det siste er verdt å merke seg: Alpine bruker musl, mens maskinen her er Windows/glibc.
+`npm ci` kjøres **inne i bildet**, så `prisma generate` kjører der og henter den binæren
+som hører til. Det er sannsynligvis riktig, men det er ikke målt, og det står derfor som
+en åpen antakelse nedenfor.
 
 ---
 
