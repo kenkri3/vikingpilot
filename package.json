@@ -25,7 +25,8 @@
     "forhandsjekk": "tsx scripts/forhandsjekk.ts",
     "oppsett": "node scripts/oppsett.mjs",
     "bruker:lag": "node scripts/bruker.mjs",
-    "kontakt:import": "tsx scripts/importer-kontakter.ts"
+    "kontakt:import": "tsx scripts/importer-kontakter.ts",
+    "diagnose": "tsx scripts/diagnose.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.10.0",
