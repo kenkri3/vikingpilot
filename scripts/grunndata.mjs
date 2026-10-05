@@ -275,7 +275,19 @@ export async function settOppGrunndata(prisma) {
   gjort.push(`sekvens med ${SEKVENSN_STEG.length} steg`);
 
   // 8. Bruker fra miljøvariabler, hvis oppgitt.
-  gjort.push(...(await settOppBrukerFraMiljoe(prisma)));
+  //
+  // Dette ligger i sin EGEN try/catch, og det er ikke pynt. Feiler
+  // brukeropprettingen, skal ikke kanalene, cron-jobbene og målgruppen gå tapt
+  // med den. Det skjedde en gang: en manglende import gjorde at HELE
+  // settOppGrunndata kastet, og systemet kom opp uten kanaler i det hele tatt.
+  // Én ting som feiler skal ikke velte de andre.
+  try {
+    gjort.push(...(await settOppBrukerFraMiljoe(prisma)));
+  } catch (feil) {
+    gjort.push(
+      `ADVARSEL: kunne ikke opprette bruker fra ADMIN-variablene: ${feil?.message ?? feil}`,
+    );
+  }
 
   return gjort;
 }

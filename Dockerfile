@@ -70,6 +70,19 @@ COPY --from=builder /app/next.config.ts ./next.config.ts
 # Den ble glemt i første versjon av dette bildet.
 COPY --from=builder /app/src/generated ./src/generated
 
+# passord.ts MÅ også med, og av en mindre opplagt grunn:
+# `grunndata.mjs` importerer den for å hashe ADMIN_PASSWORD med NØYAKTIG samme
+# funksjon som innloggingen bruker. Uten filen feiler brukeropprettingen med
+# «Cannot find module '/app/src/lib/auth/passord.ts'».
+#
+# Dette var en regresjon jeg selv innførte: fram til ADMIN-variablene ble lagt
+# til, importerte ikke grunndata.mjs noen TypeScript-filer i det hele tatt.
+#
+# Filen importerer bare `node:crypto` og `node:util`, altså rene innebygde
+# moduler. Derfor er det nok å kopiere denne ene filen — vi trenger ikke hele
+# src/lib, og vi vil ikke ha den med.
+COPY --from=builder /app/src/lib/auth/passord.ts ./src/lib/auth/passord.ts
+
 USER nextjs
 EXPOSE 3000
 
