@@ -281,7 +281,7 @@ Grunndataene — kanaler, cron-jobber, målgruppe, produkter og sekvens — sett
 **automatisk ved oppstart**. Du skal ikke trenge å gjøre noe. Men sjekk at det stemte:
 
 ```bash
-npm run forhåndssjekk
+npm run forhandsjekk
 ```
 
 Den sier blant annet om skjemaet er satt opp, om frødataene finnes, og at all utgående
@@ -512,7 +512,7 @@ hemmelighet — bare navnet på variabelen og om den er satt.**
 
 ```powershell
 cd C:\VikingPilot
-npm run forhåndssjekk
+npm run forhandsjekk
 ```
 
 **Kjør den to ganger:** én gang lokalt før du legger inn variablene på Railway, og én gang

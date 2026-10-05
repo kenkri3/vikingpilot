@@ -61,14 +61,14 @@ Kjør det selv:
 
 ```powershell
 cd C:\VikingPilot
-npm run forhåndssjekk             # sjekker miljøet. Kjør denne FØRST
+npm run forhandsjekk             # sjekker miljøet. Kjør denne FØRST
 npm run verify
 npm run sjekkliste
 npx tsx scripts/e2e-fase4.ts     # hele kjeden, ende-til-ende
 $env:PORT = "3100"; npm run start:prod
 ```
 
-**`npm run forhåndssjekk` er den viktigste av dem.** Den sjekker 18 ting i miljøet og
+**`npm run forhandsjekk` er den viktigste av dem.** Den sjekker 18 ting i miljøet og
 sier tydelig hva som mangler — før du deployer, ikke etter. Den viser aldri en
 hemmelighet, bare navnet på variabelen og om den er satt. Kjør den både lokalt og på
 Railway etter første deploy.

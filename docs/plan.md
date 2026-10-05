@@ -540,7 +540,7 @@ sammenlignes.** Det er en billig sjekk som fant en feil 144 tester gikk forbi.
 
 ### Runde 8 — fase 5, tredje del
 
-**Gjort:** `scripts/forhåndssjekk.ts` — den ene tingen som stod mellom «det virker lokalt»
+**Gjort:** `scripts/forhandsjekk.ts` — den ene tingen som stod mellom «det virker lokalt»
 og «det virker på Railway». Den sjekker miljøet mot oppsettlisten og sier tydelig hva som
 mangler. Den er lagt inn som **D0** i den manuelle listen, altså det første Kenneth gjør.
 

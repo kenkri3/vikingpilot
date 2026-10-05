@@ -427,7 +427,6 @@ den per instans, og må flyttes til databasen. Railway kjører én replika
 ---
 
 ## B-033 — Hovedbryteren har én skrivevei, og den logger
-
 **Dato:** fase 5
 **Beslutning:** All skriving til `KanalInnstilling` går gjennom
 `src/lib/kanaler/innstillinger.ts`. Hver endring skriver til revisjonsloggen med aktor,
@@ -444,3 +443,18 @@ begrunnelse nektes, og at endring uten navn nektes.
 
 
 
+
+---
+
+## B-034 — npm-skriptnavn skal være ASCII
+
+**Dato:** fase 5
+**Beslutning:** Ingen `npm run`-skriptnavn inneholder tegn utenfor ASCII. `forhåndssjekk` ble
+omdøpt til `forhandsjekk`.
+**Begrunnelse:** npm lagret skriptnavnet med ødelagt tegnkoding, slik at
+`npm run forhåndssjekk` feilet med en melding som ikke sa hvorfor. Dette ville truffet
+Kenneth på den første kommandoen han ble bedt om å kjøre.
+**Hvordan det ble funnet:** ved å kjøre hver kommando README-en oppgir, i stedet for å anta
+at de virker. En liste over kommandoer er bare nyttig hvis kommandoene faktisk går an å
+kjøre.
+**Status:** gjeldende.

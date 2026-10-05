@@ -14,9 +14,12 @@ Systemet er internt. Det har ikke eget domene — det kjører på Railway-URL-en
 ## Kom i gang
 
 ```powershell
-npm install
+npm install             # kjører også prisma generate
 npm run db:migrate      # setter opp skjemaet
-npm run db:seed         # frødata, alle kanaler AV
+npm run oppsett         # grunndata: kanaler, cron-jobber, målgruppe. Alle kanaler AV
+npm run bruker:lag -- --epost deg@vikingnet.no --navn "Ditt Navn"
+npm run forhandsjekk   # sjekker miljøet og sier hva som mangler
+
 npm run verify          # bygg, typekontroll, tester
 npm run sjekkliste      # ende-til-ende, uten nettverk
 
@@ -26,7 +29,14 @@ npm run start:prod
 
 Åpne [http://localhost:3100](http://localhost:3100).
 
+> **Kjør `forhandsjekk` først hvis noe virker galt.** Den sjekker 18 ting i miljøet og
+> sier tydelig hva som mangler. Den viser aldri en hemmelighet — bare navnet på variabelen
+> og om den er satt.
+
 **Full oppsettsliste:** [`docs/manuell-oppsett.md`](docs/manuell-oppsett.md)
+
+**Viktig:** `npm run db:seed` brukes bare i utvikling. I produksjonsbildet finnes ikke `tsx`,
+så `start:prod` kjører `node scripts/oppsett.mjs` selv ved oppstart. Den er idempotent.
 
 ---
 
@@ -91,14 +101,33 @@ tests/                 node --test
 | Fil | Innhold |
 |---|---|
 | [`docs/oversikt.md`](docs/oversikt.md) | Ett ark: hva systemet gjør og ikke gjør |
+| [`docs/manuell-oppsett.md`](docs/manuell-oppsett.md) | **Start her.** Steg for steg, lokalt og på Railway |
+| [`docs/import-av-kontakter.md`](docs/import-av-kontakter.md) | Hvordan legge inn kontakter fra CSV |
 | [`docs/spesifikasjon.md`](docs/spesifikasjon.md) | Master-prompt, med bøtte 1 og bøtte 2 |
 | [`docs/plan.md`](docs/plan.md) | Planen. Kilde til sannhet |
 | [`docs/stoppkriterier.md`](docs/stoppkriterier.md) | De åtte kriteriene, med bevisfelt |
 | [`docs/beslutninger.md`](docs/beslutninger.md) | Beslutninger med begrunnelse |
 | [`docs/aapne-sporsmal.md`](docs/aapne-sporsmal.md) | Spørsmål som venter på svar |
-| [`docs/manuell-oppsett.md`](docs/manuell-oppsett.md) | Variabler og miljø, steg for steg |
 | [`docs/status.md`](docs/status.md) | Verifisert / antatt / ikke sjekket |
 | [`LAGT-TIL-GRUNN.md`](LAGT-TIL-GRUNN.md) | Påkrevde avvik, inkludert mine egne feil |
+
+---
+
+## Kommandoer
+
+| Kommando | Hva den gjør |
+|---|---|
+| `npm run forhandsjekk` | Sjekker miljøet før deploy. Viser aldri hemmeligheter |
+| `npm run verify` | Skjema, bygg, typekontroll, tester |
+| `npm run sjekkliste` | Ende-til-ende uten nettverk |
+| `npm run oppsett` | Grunndata. Idempotent |
+| `npm run bruker:lag -- --epost … --navn …` | Oppretter eller endrer en bruker |
+| `npm run kontakt:import -- --fil … --grunnlag …` | Importerer kontakter. Tørrkjøring er standard |
+| `npm run start:prod` | Migrerer, setter opp grunndata, starter |
+
+Bevis-skriptene ligger i `scripts/`: `e2e-fase4.ts` kjører hele kjeden, `bevis-kanalspor.ts`
+viser at kanalendringer havner i revisjonsloggen, og `bevis-oppvarming.ts` viser
+avsenderspesifikk oppvarming.
 
 ---
 

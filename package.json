@@ -22,7 +22,7 @@
     "test": "node --import tsx --test tests/**/*.test.ts",
     "verify": "npm run db:validate && npm run db:generate && npm run build && npm run typecheck && npm test",
     "sjekkliste": "tsx scripts/sjekkliste.ts",
-    "forhÃ¥ndssjekk": "tsx scripts/forhÃ¥ndssjekk.ts",
+    "forhandsjekk": "tsx scripts/forhandsjekk.ts",
     "oppsett": "node scripts/oppsett.mjs",
     "bruker:lag": "node scripts/bruker.mjs",
     "kontakt:import": "tsx scripts/importer-kontakter.ts"
