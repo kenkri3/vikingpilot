@@ -21,6 +21,40 @@ import { sjekkVindu } from "../src/lib/tid/vinduer.ts";
 import { sjekkSperreliste, leggTilSperre } from "../src/lib/guards/sperreliste.ts";
 import { sperrBounce } from "../src/lib/guards/automatisk.ts";
 import { tellRevisjoner } from "../src/lib/revisjon.ts";
+import {
+  normaliserVirksomhet,
+  type NormalisertVirksomhet,
+} from "../src/lib/enhetsregister/normaliser.ts";
+import { vurderVirksomhet, type FilterKonfig } from "../src/lib/enhetsregister/filter.ts";
+import { kvoteForDag } from "../src/lib/guards/oppvarming.ts";
+import { byggIdempotensNokkel } from "../src/lib/guards/idempotens.ts";
+
+/**
+ * Bygger en gyldig, privat virksomhet for filterkontrollene.
+ * Testen varierer én egenskap om gangen fra dette utgangspunktet.
+ */
+function virksomhetForSjekk(orgnr: string, navn: string): NormalisertVirksomhet {
+  return {
+    orgnr,
+    navn,
+    normalisertNavn: navn.toLowerCase(),
+    organisasjonsform: "AS",
+    naeringskode: "62.010",
+    naeringsbeskrivelse: "Databehandling",
+    sektor: "PRIVAT",
+    antallAnsatte: 20,
+    stiftetDato: new Date(Date.UTC(2020, 0, 15)),
+    registrertDato: new Date(Date.UTC(2020, 0, 20)),
+    konkurs: false,
+    underAvvikling: false,
+    adresse: "Testveien 1",
+    postnummer: "0150",
+    poststed: "OSLO",
+    fylke: "Oslo",
+    kommunenummer: "0301",
+    nettside: null,
+  };
+}
 
 const url = process.env.DATABASE_URL;
 
@@ -442,6 +476,168 @@ async function hoved() {
       await prisma.sperreliste.deleteMany({ where: { organisasjonId: testOrgId } });
     }
     await prisma.organisasjon.deleteMany({ where: { orgnr: testOrgNr } });
+  }
+
+  // -------------------------------------------------------------------------
+  seksjon("11. Enhetsregister-pipelinen — normalisering og filter");
+
+  // Normalisering og filtrering er rene funksjoner. De kan sjekkes uten nettverk.
+  const proveRaa = {
+    organisasjonsnummer: "933 851 222",
+    navn: "  Vikingnet AS  ",
+    organisasjonsform: { kode: "AS" },
+    naeringskode1: { kode: "62.010", beskrivelse: "Databehandling" },
+    antallAnsatte: 4,
+    stiftelsesdato: "2020-01-15",
+    sektor: "",
+    forretningsadresse: { adresse: ["Testveien 1"], postnummer: "0150", poststed: "OSLO" },
+  };
+
+  const normalisert = normaliserVirksomhet(proveRaa);
+
+  if (normalisert?.orgnr === "933851222" && normalisert.navn === "Vikingnet AS") {
+    ok("Normalisering rydder orgnr og navn", `${normalisert.orgnr} / ${normalisert.navn}`);
+  } else {
+    nei("Normalisering virker ikke", JSON.stringify(normalisert));
+  }
+
+  // Med tomt sektor-felt må organisasjonsformen avgjøre. Dette var en ekte feil:
+  // første versjon avviste alt fra det åpne API-et som «ukjent sektor».
+  if (normalisert?.sektor === "PRIVAT") {
+    ok("Tomt sektor-felt gir PRIVAT når organisasjonsformen er AS");
+  } else {
+    nei("Sektor-utledning feiler på tomt sektor-felt", `fikk ${normalisert?.sektor}`);
+  }
+
+  const offentligProve = normaliserVirksomhet({
+    organisasjonsnummer: "999888777",
+    navn: "Statens Hus",
+    organisasjonsform: { kode: "ORGL" },
+  });
+  if (offentligProve?.sektor === "OFFENTLIG") {
+    ok("ORGL klassifiseres som offentlig");
+  } else {
+    nei("ORGL ble ikke klassifisert som offentlig");
+  }
+
+  // Absolutte filterregler. Disse kan ikke slås av fra konfigurasjon.
+  const aapenKonfig = {
+    naeringskoder: [],
+    fylker: [],
+    minAnsatte: null,
+    maxAnsatte: null,
+    minAlderMaaneder: null,
+    ekskluderOffentlig: false,
+    ekskluderKonkurs: false,
+    ekskluderUnderAvvikling: false,
+  };
+
+  const base = virksomhetForSjekk("999888777", "Testbedrift AS");
+  const tilfeller: { navn: string; v: typeof base; kode: string }[] = [
+    { navn: "konkurs", v: { ...base, konkurs: true }, kode: "KONKURS" },
+    { navn: "under avvikling", v: { ...base, underAvvikling: true }, kode: "UNDER_AVVIKLING" },
+    { navn: "offentlig sektor", v: { ...base, sektor: "OFFENTLIG" as const }, kode: "OFFENTLIG_SEKTOR" },
+  ];
+
+  let alleAvvist = true;
+  for (const t of tilfeller) {
+    const svar = vurderVirksomhet(t.v, aapenKonfig, new Date());
+    if (svar.godkjent || svar.kode !== t.kode) {
+      alleAvvist = false;
+      nei(`${t.navn} slapp gjennom en helt åpen konfigurasjon`, `kode=${svar.kode}`);
+    }
+  }
+  if (alleAvvist) {
+    ok("Konkurs, avvikling og offentlig sektor avvises selv med åpen konfigurasjon");
+  }
+
+  // Kontrolltest: en vanlig privat virksomhet skal slippe gjennom.
+  const vanlig = vurderVirksomhet(base, aapenKonfig, new Date());
+  if (vanlig.godkjent) {
+    ok("En vanlig privat virksomhet godkjennes", "kontrolltest");
+  } else {
+    nei("En vanlig privat virksomhet ble avvist", vanlig.grunn);
+  }
+
+  // -------------------------------------------------------------------------
+  seksjon("12. Utsendingsvakten — volum, oppvarming og idempotens");
+
+  const tomPlan = kvoteForDag(5, []);
+  if (tomPlan.kvote === 0) {
+    ok("En tom oppvarmingsplan gir kvote 0", "ikke fritt fram");
+  } else {
+    nei("Tom oppvarmingsplan ga kvote over 0", `fikk ${tomPlan.kvote}`);
+  }
+
+  const planProve = [
+    { dagFraStart: 0, maksPerDag: 5 },
+    { dagFraStart: 4, maksPerDag: 10 },
+  ];
+  if (kvoteForDag(0, planProve).kvote === 5 && kvoteForDag(4, planProve).kvote === 10) {
+    ok("Oppvarmingskvoten vokser med trinnene");
+  } else {
+    nei("Oppvarmingskurven regnes feil");
+  }
+
+  const nokkelA = byggIdempotensNokkel({ kanal: "EPOST", kontaktId: "k1", sekvensStegId: "s1" });
+  const nokkelB = byggIdempotensNokkel({ kanal: "EPOST", kontaktId: "k1", sekvensStegId: "s1" });
+  const nokkelC = byggIdempotensNokkel({ kanal: "EPOST", kontaktId: "k2", sekvensStegId: "s1" });
+  const nokkelTorr = byggIdempotensNokkel({
+    kanal: "EPOST",
+    kontaktId: "k1",
+    sekvensStegId: "s1",
+    torrkjoering: true,
+  });
+
+  if (nokkelA === nokkelB && nokkelA !== nokkelC && nokkelA !== nokkelTorr) {
+    ok("Idempotensnøkkelen er deterministisk og skiller mottakere og tørrkjøring");
+  } else {
+    nei("Idempotensnøkkelen virker ikke som den skal");
+  }
+
+  // Tilstandskontroll: ingen kanal skal kunne sende, og ingen sperre skal mangle mottaker.
+  const sperrerUtenMottaker = await prisma.sperreliste.count({
+    where: {
+      aktiv: true,
+      epost: null,
+      epostDomene: null,
+      kontaktId: null,
+      organisasjonId: null,
+    },
+  });
+
+  if (sperrerUtenMottaker === 0) {
+    ok("Ingen aktiv sperre mangler mottaker", "en slik sperre ville stoppet alt");
+  } else {
+    nei(
+      `${sperrerUtenMottaker} aktive sperrer mangler mottaker`,
+      "de stopper all utgående trafikk",
+    );
+  }
+
+  // Dataene pipelinen har hentet, skal ikke inneholde noe forbudt.
+  const offentligeILager = await prisma.organisasjon.count({ where: { sektor: "OFFENTLIG" } });
+  if (offentligeILager === 0) {
+    ok("Ingen offentlige virksomheter i basen");
+  } else {
+    nei(`${offentligeILager} offentlige virksomheter ligger i basen`);
+  }
+
+  const konkursILager = await prisma.organisasjon.count({
+    where: { OR: [{ konkurs: true }, { underAvvikling: true }] },
+  });
+  if (konkursILager === 0) {
+    ok("Ingen konkurser eller avviklinger i basen");
+  } else {
+    nei(`${konkursILager} konkurser eller avviklinger ligger i basen`);
+  }
+
+  // Sendende ruter skal ikke ha sendt noe.
+  const sendtFaktisk = await prisma.utsending.count({ where: { status: "SENDT" } });
+  if (sendtFaktisk === 0) {
+    ok("Ingen utsending er noen gang sendt", "alt er av");
+  } else {
+    nei(`${sendtFaktisk} utsendinger står som sendt`);
   }
 
   // -------------------------------------------------------------------------

@@ -237,3 +237,56 @@ feilen er riktig. Det skjedde: ruten svarte 500 i stedet for 400 helt til vi byt
 kode-sjekk. Vi fant det bare fordi vi kalte ruten på ekte i stedet for å lese koden.
 **Status:** gjeldende. Gjelder all feilhåndtering som krysser en modulgrense.
 
+---
+
+## B-020 — Enhetsregisteret krever ingen nøkkel
+
+**Dato:** fase 3
+**Beslutning:** `ENHETSREGISTERET_API_KEY` er valgfri og normalt unødvendig. Pipelinen
+henter fra det åpne API-et uten konfigurasjon, og integrasjonen meldes som konfigurert.
+**Begrunnelse:** Oppdraget listet `ENHETSREGISTERET_API_KEY` blant nøklene, og fase 1
+behandlet den som påkrevd. Det var **feil**. Vi kalte API-et uten autentisering og fikk
+HTTP 200 med ekte data. Å kreve en nøkkel som ikke finnes ville vist «ikke konfigurert»
+for alltid — og det ville vært usant, som er verre enn å mangle en nøkkel.
+**Status:** gjeldende. `ENHETSREGISTERET_BASE_URL` beholdes for å kunne peke på et annet
+endepunkt.
+
+---
+
+## B-021 — Sektor utledes fra organisasjonsform, ikke fra `sektor`-feltet
+
+**Dato:** fase 3
+**Beslutning:** Klassifiseringen ligger i `src/lib/enhetsregister/sektor.ts`, med eksplisitte
+kodelister for offentlige og private organisasjonsformer. Et tomt `sektor`-felt gir
+`UKJENT`, og `UKJENT` avvises når `ekskluderOffentlig` er på — som er standarden.
+**Begrunnelse:** Enhetsregisterets `sektor`-felt er **tomt i praksis**. Det er målt: 200
+hentede virksomheter kom tilbake med `sektor: ""`. Første versjon avviste derfor alt fra
+det åpne API-et som «ukjent sektor», inkludert helt vanlige AS — 0 godkjente av 200.
+Trygt, men ubrukelig. Vi fant det bare ved å kjøre pipelinen mot ekte data.
+**Konsekvens:** Vi gjetter fortsatt ikke. En ukjent organisasjonsform gir `UKJENT` og
+avvises. Men kjente private former slipper gjennom.
+**Status:** gjeldende.
+
+---
+
+## B-022 — Effektiv døgnkvote er den laveste av to grenser
+
+**Dato:** fase 3
+**Beslutning:** `effektivDognkvote()` returnerer `min(oppvarmingskvote, avsenderens
+maksPerDag)`. Begge grensene gjelder samtidig.
+**Begrunnelse:** Å ta den høyeste ville latt oppvarmingsplanen overstyre en lavere
+døgnkvote satt av et menneske. Den laveste er den trygge.
+**Status:** gjeldende.
+
+---
+
+## B-023 — En tom oppvarmingsplan betyr kvote 0
+
+**Dato:** fase 3
+**Beslutning:** `kvoteForDag()` returnerer 0 når trinnlisten er tom. Manglende plan gir
+ingen utsending.
+**Begrunnelse:** Den farligste mulige feilen ville vært å tolke «ingen plan» som «ingen
+grense». Det er låst fast med en egen test.
+**Status:** gjeldende.
+
+

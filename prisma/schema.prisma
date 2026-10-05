@@ -499,6 +499,9 @@ model Avsender {
   status         AvsenderStatus @default(OPPVARMING)
   maksPerDag     Int      @default(10)
   maksPerUke     Int      @default(50)
+  /// Naar oppvarmingen startet for DENNE avsenderen. Oppvarming er per
+  /// avsender, ikke per kanal — to avsendere kan vaere paa ulike trinn.
+  oppvarmingStartDato DateTime?
   sendtIDag      Int      @default(0)
   sendtDenneUken Int      @default(0)
   dognDato       DateTime?

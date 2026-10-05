@@ -58,8 +58,12 @@ const KANALER: {
 const INTEGRASJONER = [
   {
     navn: "enhetsregisteret",
-    beskrivelse: "Henter nye selskaper fra Enhetsregisteret.",
-    nokler: ["ENHETSREGISTERET_API_KEY"],
+    beskrivelse:
+      "Åpent API fra Brønnøysundregistrene. Krever ingen nøkkel. Henter nye selskaper.",
+    // Tom liste med vilje: Enhetsregisteret er et åpent API. Det er verifisert
+    // ved å kalle det uten autentisering. Å kreve en nøkkel her ville vist
+    // «ikke konfigurert» for alltid, og det ville vært usant.
+    nokler: [] as string[],
   },
   {
     navn: "epost",

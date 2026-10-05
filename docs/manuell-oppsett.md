@@ -291,13 +291,15 @@ Hver av disse har en ærlig «ikke konfigurert»-tilstand. Systemet virker uten 
 
 ### Enhetsregisteret
 
+**Ingen nøkkel trengs.** Enhetsregisteret er et åpent API fra Brønnøysundregistrene.
+Dette er verifisert ved å kalle det uten autentisering — det svarte HTTP 200 med ekte data.
+
 | Variabel | Beskrivelse | Lokalt | Railway |
 |---|---|---|---|
-| `ENHETSREGISTERET_API_KEY` | API-nøkkel for tilgang til Enhetsregisteret | ☐ | ☐ |
-| `ENHETSREGISTERET_BASE_URL` | *Valgfritt.* Overstyring av endepunkt | ☐ | ☐ |
+| `ENHETSREGISTERET_BASE_URL` | *Valgfritt.* Peker på et annet endepunkt, f.eks. et lokalt testoppsett. Tom = det offisielle, åpne API-et | ☐ | ☐ |
+| `ENHETSREGISTERET_API_KEY` | *Valgfritt og normalt unødvendig.* Sendes som Bearer-header hvis den er satt | ☐ | ☐ |
 
-Uten nøkkel: pipelinen sier «ikke konfigurert», og **finner ikke på data**. Dashbordet
-viser tydelig at målgruppen ikke kan fylles.
+**Du trenger ikke gjøre noe her.** Pipelinen henter fra det åpne API-et uten konfigurasjon.
 
 ### E-post
 

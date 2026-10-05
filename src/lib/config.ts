@@ -84,7 +84,11 @@ export const STANDARD_TORRKJORING = () => boolsk("STANDARD_TORRKJORING", true);
  * å nekte å gjøre noe halvveis i stedet for å finne på data.
  */
 export function integrasjonsstatus(): Integrasjonsstatus[] {
-  const enhetsregisteret = ["ENHETSREGISTERET_API_KEY"];
+  // Enhetsregisteret er et ÅPENT API og krever ingen nøkkel. Det er verifisert
+  // ved å kalle det uten autentisering. Vi markerer det derfor som konfigurert,
+  // og sier samtidig at en nøkkel ikke er nødvendig. Å kreve en nøkkel her ville
+  // vist «ikke konfigurert» for alltid, og det ville vært usant.
+  const enhetsregisteret: string[] = [];
   const epost = ["EPOST_KANAL", "EPOST_FRA_ADRESSE"];
   const vikingcrm = ["VIKINGCRM_WEBHOOK_URL"];
   const agent = ["AGENT_WEBHOOK_URL"];
@@ -94,7 +98,7 @@ export function integrasjonsstatus(): Integrasjonsstatus[] {
       navn: "enhetsregisteret",
       visningsnavn: "Enhetsregisteret",
       beskrivelse:
-        "Henter nye selskaper. Uten nøkkel kan ikke målgruppen fylles — systemet finner ikke på data.",
+        "Åpent API fra Brønnøysundregistrene. Krever ingen nøkkel. Henter nye selskaper.",
       konfigurert: alleSatt(enhetsregisteret),
       manglendeNokler: manglende(enhetsregisteret),
     },
