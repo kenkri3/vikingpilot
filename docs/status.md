@@ -3,7 +3,7 @@
 Oppdragets regel 1: *«Ingen påstand uten dekning. Skill verifisert, antatt og ikke
 sjekket.»* Dette dokumentet er stedet der den regelen håndheves.
 
-Sist oppdatert: etter runde 3 (fase 2).
+Sist oppdatert: etter runde 4 (fase 3).
 
 ---
 
@@ -73,6 +73,31 @@ Påstander jeg har målt, med kommandoen eller resultatet som beviser dem.
 | Korrelasjonsid knytter en kjede sammen | Test: tre oppføringer, riktig rekkefølge |
 | Sperreliste-ruten svarer riktig over HTTP | Uten hemmelighet → **401**. Feil hemmelighet → **401**. Fri adresse → `tillatt: true`. Sperret adresse → `tillatt: false` med `AVMELDING`. Ugyldig type → **400**. Sperre uten mottaker → **400** |
 
+### Fase 3 — Enhetsregister-pipelinen og utsendingsvakten
+
+| Påstand | Bevis |
+|---|---|
+| Enhetsregisteret krever ingen nøkkel | `GET https://data.brreg.no/enhetsregisteret/api/enheter?size=1` **uten** autentisering → HTTP 200 med ekte data |
+| Normalisering er deterministisk og testet | 43 tester i `tests/enhetsregister.test.ts` |
+| Offentlig sektor avvises selv med helt åpen konfigurasjon | Test: `ekskluderOffentlig: false` slipper den likevel ikke gjennom |
+| Konkurs og avvikling avvises alltid | To tester, samme mønster |
+| Ukjent sektor avvises som standard | Test: `UKJENT` gir `OFFENTLIG_SEKTOR` |
+| Vanlige private selskapsformer slipper gjennom | Test over ni former: AS, ASA, ENK, ANS, DA, SA, FLI, STI, NUF |
+| **Pipelinen kjører mot ekte data** | `GET /api/cron/enhetsregister?sider=2&antall=100` → hentet **200**, godkjent **13**, avvist **187** |
+| **Tørrkjøring skriver ingenting** | Etter tørrkjøring: `Organisasjon` = **0**, `Prospekt` = **0**, `CronKjoering` = 3 |
+| **Ekte kjøring skriver** | `?torrkjoering=false` → opprettet **13** organisasjoner og **13** prospekter |
+| **Kjøring er idempotent** | Samme kall igjen → opprettet **0**, oppdatert **13**, antall uendret |
+| **Ingen offentlige i basen** | `SELECT count(*) WHERE sektor = 'OFFENTLIG'` → **0** |
+| **Ingen konkurser eller avviklinger i basen** | `SELECT count(*) WHERE konkurs OR "underAvvikling"` → **0** |
+| Døgnkvoten stopper den ene meldingen for mye | Test: 99 av 100 slipper, 100 av 100 stoppes |
+| Ukekvoten gjelder selv når døgnkvoten er ledig | Test |
+| En tom oppvarmingsplan gir kvote 0 | Test, med kommentar om at dette er den farligste feilen |
+| Effektiv kvote er den **laveste** av to grenser | Test |
+| Parallell reservasjon slipper bare én gjennom | Test med tre samtidige `Promise.all` |
+| Sendt melding kan ikke reserveres på nytt | Test |
+| Feilet melding blokkerer også | Test |
+| Tellere nullstilles ved norsk midnatt, ikke etter 24 timer | Test: 23:00 UTC er 00:00 norsk tid, og døgnet har skiftet |
+
 ---
 
 ## Antatt
@@ -117,6 +142,10 @@ Alvor etter skalaen BLOKKERER / HØY / MIDDELS / LAV.
 | F-009 | ~~BLOKKERER~~ | ~~En global sperre på én adresse sperret **hver** mottaker i hele systemet~~ | **Lukket.** Regelen var `{ type: "GLOBAL" }` uten adressesjekk. Ville stoppet all utsending. Fanget av kontrolltesten «en mottaker uten sperre slipper gjennom» |
 | F-010 | ~~HØY~~ | ~~En sperre uten mottaker ble godtatt, og sperret all utgående trafikk~~ | **Lukket.** Nektes nå med `UgyldigSperre`. Se B-018 |
 | F-011 | MIDDELS | `instanceof` krysser ikke modulgrenser pålitelig i Next.js — feilhåndtering ga 500 i stedet for 400 | **Lukket** med kode-sjekk. Se B-019. Kan gjelde andre feilklasser senere |
+| F-012 | ~~HØY~~ | ~~`ENHETSREGISTERET_API_KEY` ble krevd, men API-et er åpent~~ | **Lukket.** Integrasjonen ville vist «ikke konfigurert» for alltid. Verifisert at API-et svarer uten nøkkel. Se B-020 |
+| F-013 | ~~HØY~~ | ~~Sektor-utledningen avviste ALT fra det åpne API-et som «ukjent sektor»~~ | **Lukket.** `sektor`-feltet er tomt i praksis. 0 godkjente av 200 før rettelsen. Se B-021 |
+| F-014 | MIDDELS | Enhetsregisteret oppgir ikke `fylke` for de fleste virksomheter | Åpent. Fylke-filteret virker, men slipper bare gjennom det som faktisk har fylkesnavn. Se `docs/aapne-sporsmal.md` |
+| F-015 | LAV | Enhetsregisteret oppgir ikke `antallAnsatte` for de fleste virksomheter | Åpent, ikke en feil. 185 av 200 ble avvist på `ANSATTE` fordi feltet var tomt. Målgruppens `minAnsatte` bestemmer hvor stort tapet er |
 
 **Ingen funn av alvor BLOKKERER eller HØY står åpent.** Stoppkriterium 8 er oppfylt for
 denne runden.

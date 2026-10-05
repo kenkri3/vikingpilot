@@ -16,10 +16,10 @@
 | Fase | Innhold | Status |
 |---|---|---|
 | 0 | Kartlegg, les spesifikasjonen, skriv planen med stoppkriterier | **Fullført** — med to avvik, se A-002 og A-003 |
-| 1 | Skjelett: stack, skjema, migreringer, innlogging, tomt dashbord, deploybart | **Fullført og verifisert** — se bevisene under |
-| 2 | Kjernedata, sperrelister, revisjonslogg | **Fullført og verifisert** — se bevisene under |
-| 3 | Enhetsregister-pipeline og utsendingsvakt | Neste |
-| 4 | Sekvensmotor med tørrkjøring, og godkjenningskø | Ikke startet |
+| 1 | Skjelett: stack, skjema, migreringer, innlogging, tomt dashbord, deploybart | **Fullført og verifisert** |
+| 2 | Kjernedata, sperrelister, revisjonslogg | **Fullført og verifisert** |
+| 3 | Enhetsregister-pipeline og utsendingsvakt | **Fullført og verifisert** mot ekte data |
+| 4 | Sekvensmotor med tørrkjøring, og godkjenningskø | Neste |
 | 5 | Herding: frødata, sjekkeliste, dokumentasjon, manuell liste | Ikke startet |
 
 **Ingen blokkering står åpen.** F-001 (skallet) var feildiagnostisert og er lukket;
@@ -159,23 +159,52 @@ feilkode. Se B-019.
 
 ## Fase 3 — Enhetsregister-pipeline og utsendingsvakt
 
-**Mål:** systemet fyller seg selv med kvalifiserte prospekter, og kan ikke sende for mye.
+**Status: fullført og verifisert mot ekte data.**
 
-**Steg:**
+**Steg og resultat:**
 
-1. Hent fra Enhetsregisteret. Ærlig «ikke konfigurert» hvis nøkkel mangler
-2. Normaliser: navn, orgnr, adresse, NACE
-3. Filtrer deterministisk: bransje, fylke, størrelse, alder, rolle. Offentlig sektor ut
-4. `Maalgruppe` som konfigurasjon. Kenneth og Fredrik skal kunne endre målgruppen
-5. Volum per avsender, per dag og per uke
-6. Oppvarmingsplan med kvote som vokser over tid
-7. Hverdagsvindu og røde dager. Norske helligdager, ikke bare helger
-8. Idempotensnøkkel. Samme melding skal aldri kunne sendes to ganger
-9. Bruddforsøk mot hver guardrail
+1. ✅ `hent.ts` henter fra det åpne API-et. Ingen nøkkel kreves — verifisert
+2. ✅ `normaliser.ts` rydder navn, orgnr, datoer og adresser. Rene funksjoner, ingen nettverk
+3. ✅ `filter.ts` avviser med grunn i klartekst. Offentlig sektor, konkurs og avvikling ut, alltid
+4. ✅ `sektor.ts` klassifiserer etter organisasjonsform, med eksplisitte kodelister
+5. ✅ `volum.ts`: døgn- og ukekvote per avsender, nullstilles ved norsk midnatt
+6. ✅ `oppvarming.ts`: kvoten vokser etter en plan som er data
+7. ✅ `idempotens.ts`: unik nøkkel i databasen, ikke sjekk-og-send
+8. ✅ 43 + 28 nye tester, alle med bruddforsøk
 
-**Stoppkriterium:** alle guardrails avviser aktive bruddforsøk. `npm run test:brudd` grønn.
+**Bevis:** se `docs/status.md`, avsnittet «Fase 3».
 
-Blokkeres delvis av S4 (målgruppe) for frødataenes innhold.
+**To ekte feil funnet ved å kjøre mot virkelige data:**
+
+| Feil | Konsekvens | Hvordan den ble funnet |
+|---|---|---|
+| `ENHETSREGISTERET_API_KEY` ble krevd, men API-et er åpent | Integrasjonen ville vist «ikke konfigurert» for alltid | Kalte API-et uten autentisering og fikk HTTP 200 |
+| Sektor-utledningen avviste alt fra det åpne API-et | 0 godkjente av 200, inkludert vanlige AS | Kjørte pipelinen og leste opptellingen |
+
+Den andre er den lærerike. Koden var «trygg» — den avviste alt den var i tvil om. Men
+den var ubrukelig, og den så riktig ut i alle enhetstester fordi testdataene mine hadde
+et `sektor`-felt som virkeligheten ikke har. **Enhetstester mot oppdiktede data fant det
+ikke. Å kjøre mot ekte data gjorde det.**
+
+**Tre feil i mine egne forventninger, funnet av testene:**
+
+- `dagerSiden` regner i norske døgn. 23:00 UTC er 00:00 norsk tid, så døgnet *har*
+  skiftet. Testen min sa feil, ikke koden.
+- Idempotenstestene brukte falske fremmednøkler og feilet på `P2003` i stedet for
+  `P2002`. Da testet de ingenting.
+- Oppvarmingstestene skrev og slettet globale trinn — delt tilstand. De leser nå planen
+  som faktisk ligger i basen.
+
+**Kjent begrensning som ikke er en feil:** Enhetsregisterets åpne API oppgir sjelden
+`antallAnsatte` og `fylke`. 185 av 200 ble avvist nettopp på manglende ansattall. Det
+betyr at `minAnsatte` i målgruppen koster treff. Se F-014 og F-015 i `docs/status.md`.
+
+**Designvalg som må huskes:**
+
+- En tom oppvarmingsplan gir kvote 0, ikke fritt fram. Låst med test.
+- Effektiv kvote er den *laveste* av oppvarmingskvoten og døgnkvoten.
+- Idempotens bruker en unik indeks, ikke les-så-skriv. Kappløpet er testet med tre
+  samtidige kall.
 
 ---
 
@@ -319,14 +348,43 @@ er funnet og lukket før de nådde produksjon.**
 
 ---
 
-### Neste runde — fase 3
+### Runde 4 — fase 3
 
-Enhetsregister-pipelinen og utsendingsvakten. Begynn med `src/lib/enhetsregister/`:
-henting med ærlig «ikke konfigurert», deretter `normalize.ts` og `filter.ts`.
-Deretter `src/lib/guards/volum.ts`, `oppvarming.ts` og `idempotens.ts`.
+**Gjort:** Enhetsregister-pipelinen og utsendingsvakten. Henting fra det åpne API-et,
+normalisering, deterministisk filtrering med grunner i klartekst, sektor-klassifisering,
+volum, oppvarming og idempotens. Cron-ruten kjører hele pipelinen med tørrkjøring som
+standard. 71 nye tester. Sjekkelisten utvidet fra 32 til 44 kontroller.
 
-**Fase 3 blokkeres delvis av S1, S2 og S4.** Normalisering, filtrering og selve
-volumtallene kan bygges med frødata først, så svarene haster ikke for å komme i gang.
+**Endret for en bruker av systemet:** Ja, og denne gangen med ekte data.
 
-**Rekkefølgen som er låst:** fase 2 → 3 → 4 → 5. Ikke hopp til fase 4 fordi den er
-morsommere; fase 3 sin utsendingsvakt er det som gjør fase 4 trygg å bygge.
+- Pipelinen fyller målgruppen selv. Kjør den, og det ligger kvalifiserte prospekter i basen.
+- Dashbordet kan vise hvorfor en virksomhet ble silt ut — hvert avslag har en grunn.
+- Utsendingsvakten kan ikke lenger bare teoretisk hindre overforbruk: døgnkvote, ukekvote,
+  oppvarmingsplan og idempotens er bygget og testet.
+- Beviset på at det virker mot virkeligheten: hentet 200, godkjent 13, opprettet 13.
+  Kjørt om igjen: opprettet 0, oppdatert 13.
+
+**Rettet egne feil underveis:**
+
+1. `ENHETSREGISTERET_API_KEY` ble krevd av en feil jeg selv innførte i fase 1.
+2. Sektor-utledningen avviste alt fra det åpne API-et. Funnet bare ved å kjøre mot ekte data.
+3. `dagerSiden`-testen min hadde feil forventning om tidssoner.
+4. Idempotenstestene testet ingenting, fordi de feilet på fremmednøkkel først.
+5. Oppvarmingstestene rørte delt tilstand.
+6. `hentSider` manglet `endepunkt` i returtypen.
+7. Seed-dataene krevde fortsatt den gamle nøkkelen, så dashbordet viste feil tilstand.
+
+**Blokkert av:** ingenting.
+
+---
+
+### Neste runde — fase 4
+
+Sekvensmotoren og godkjenningskøen. Begynn med `src/lib/sekvens/`: velg neste steg, regn
+ut planlagt tid, kjør i tørrkjøring. Deretter `src/lib/godkjenning/`.
+
+Fase 4 er den første fasen som faktisk kan føre til at noe går ut. Derfor er rekkefølgen
+viktig: godkjenningskøen bygges **før** sekvensmotoren kobles til noe som kan sende.
+
+**Svar som trengs:** S6 (sekvensens form) og S7 (produkt og pris) gjør innholdet riktig,
+men mekanikken kan bygges med frødata først.

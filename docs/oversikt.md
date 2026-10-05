@@ -1,6 +1,6 @@
 # VikingPilot — ett ark
 
-**Status: fase 1 (skjelettet) er bygget og verifisert. Fase 2–5 gjenstår.**
+**Status: fase 1–3 er bygget og verifisert. Fase 4–5 gjenstår.**
 
 ---
 
@@ -11,13 +11,13 @@ legger alt klart for at et menneske kan lukke avtalen. Det selger ikke selv.
 
 **Systemet eier sannhet, grenser og logg. Agenten eier skjønn og samtale.**
 
-Ni moduler, alle med datastruktur på plass:
+Ni moduler:
 
 1. **Kjernedata** — organisasjoner, kontakter, prospekter, kunder, dialoger, produkter,
    avtaler, oppgaver
 2. **Sperrelister** — global sperre, eksisterende kunder, aktiv dialog, avmeldinger,
    bounces. Sjekkes i det øyeblikket noe skal sendes
-3. **Enhetsregister-pipeline** — hent, normaliser, filtrer, fyll på jevnlig
+3. **Enhetsregister-pipeline** — henter, normaliserer, filtrerer, fyller på jevning
 4. **Utsendingsvakt** — volum per avsender, oppvarmingsplan, hverdagsvinduer, røde dager,
    idempotens
 5. **Sekvensmotor** — versjonerte sekvenser. Sekvensene er data, ikke kode
@@ -37,16 +37,21 @@ Målt, ikke antatt:
 | Ting | Bevis |
 |---|---|
 | Skjemaet setter seg selv opp mot tom database | 32 tabeller opprettet fra tom base |
-| Bygg, typekontroll og tester er grønne | `npm run verify` → exit 0 |
+| Bygg, typekontroll og tester er grønne | `npm run verify` → exit 0, **107 tester** |
+| Sjekkelisten er grønn, uten nettverk | **44 bestått, 0 feilet** |
 | Systemet svarer | `GET /api/helse` → 200, database ok |
 | Innlogging kreves | `/dashboard` uten cookie → 307 til `/login` |
 | All utgående trafikk er av | 0 av 6 kanaler slått på, alle med døgnkvote 0 |
-| Ingen kan sende ved et uhell | Cron tørrkjører som standard; idempotens avviser duplikat |
+| **Pipelinen henter ekte bedrifter** | Hentet **200**, godkjent **13**, opprettet **13** |
+| **Tørrkjøring skriver ingenting** | Etter tørrkjøring: 0 organisasjoner, 0 prospekter |
+| **Kjøring er idempotent** | Samme kall igjen → opprettet **0**, oppdatert **13** |
+| **Offentlig sektor kommer aldri inn** | 0 offentlige i basen. Avvises selv med åpen konfigurasjon |
+| **Ingen konkurser eller avviklinger** | 0 i basen |
+| Sperrelister virker | 27 bruddforsøk, alle avviser |
+| Utsendingsvakten virker | Døgnkvote, ukekvote, oppvarming og idempotens testet med bruddforsøk |
+| Ingen kan sende ved et uhell | Ingen utsending står som sendt. Cron tørrkjører som standard |
 | Integrasjoner er ærlige | Hver navngir nøyaktig hvilke nøkler som mangler — og finner ikke på data |
-| Cron-ruter er beskyttet | Uten hemmelighet → 503. Feil hemmelighet → 401 |
-| Røde dager stenges | Søndag, første juledag og natt avvises |
 | Hemmeligheter lekker ikke | Passord i tilkoblingsstrenger maskeres i logger |
-| Sjekkelisten er grønn | 26 bestått, 0 feilet, uten nettverk |
 
 Kjør det selv:
 
@@ -63,12 +68,10 @@ $env:PORT = "3100"; npm run start:prod
 
 | Ikke bygget | Hvorfor |
 |---|---|
-| Enhetsregister-pipelinen henter ikke faktisk | Fase 3. Ruten sier ærlig «ikke konfigurert» |
-| Utsendingsvakten håndhever ikke volum i praksis | Fase 3. Ingen kanal er slått på, så ingen fare |
-| Sperrelister fylles ikke automatisk | Fase 2. Tabellen finnes, reglene bygges |
 | Sekvensmotoren kjører ikke | Fase 4. Sekvensen ligger som data |
-| Godkjenningskøen har ingen grensesnitt | Fase 4. Tabellene finnes |
-| Bare én av fem cron-ruter er bygget | Resten følger mønsteret i fase 3–4 |
+| Godkjenningskøen har ingen rute å legge noe i | Fase 4. Tabellene finnes |
+| Bare én av fem cron-ruter er bygget | Resten følger mønsteret i fase 4 |
+| Ingen e-post kan faktisk sendes | Bevisst. Kanalen er av, og Fase 4 bygger køen først |
 | Selve agenten | Egen økt. Denne økten leverer verktøyflatene |
 | Eget domene | Skal ikke ha det. Kjører på Railway-URL-en |
 | Migrering av vikingnet.no | Bygget i Firebase, skal ikke røres |
@@ -77,22 +80,25 @@ $env:PORT = "3100"; npm run start:prod
 
 ## Beslutninger som gjenstår
 
-Elleve spørsmål står åpne i `docs/aapne-sporsmal.md`. Fire blokkerer videre arbeid:
+Elleve spørsmål står åpne i `docs/aapne-sporsmal.md`. To blokkerer fase 4 sitt innhold:
 
 | # | Spørsmål | Blokkerer |
 |---|---|---|
-| S1 | Hvilken kanal sender vi e-post gjennom? | fase 3 |
-| S2 | Hvilke avsendere, og hvor mange meldinger tåler de? | fase 3 |
-| S4 | Hva kjennetegner en god kunde for oss? | fase 3 |
-| S7 | Hva selger vi, og til hvilken pris? | fase 4 |
+| S6 | Hvordan ser en sekvens ut i praksis? | fase 4, innholdet |
+| S7 | Hva selger vi, og til hvilken pris? | fase 4, innholdet |
 
-**Én beslutning haster mer enn de andre:** byggeroten er flyttet fra
+Mekanikken i fase 4 kan bygges med frødata først.
+
+**Én beslutning haster fortsatt mer:** byggeroten er flyttet fra
 `G:\Min disk\GitHub\Vikingpilot` til `C:\VikingPilot`. `G:` er Google Drive og skriver
-0-byte filer uten å si fra. Begrunnelsen er målt — se `LAGT-TIL-GRUNN.md` A-001. Uten din
-aksept på dette fortsetter jeg på lånt grunn.
+0-byte filer uten å si fra. Se `LAGT-TIL-GRUNN.md` A-001.
 
-**Og én ting du bør vite:** port 3000 på denne maskinen er opptatt av
+**Og en ting du bør vite:** port 3000 på denne maskinen er opptatt av
 Tønsberglivet-prosjektet ditt. Jeg rørte den ikke. VikingPilot bruker 3100 lokalt.
+
+**En ting du bør vite om Enhetsregisteret:** det åpne API-et oppgir sjelden
+`antallAnsatte` og `fylke`. Med `minAnsatte: 5` ble 185 av 200 avvist nettopp på det.
+Vil du ha flere treff, må målgruppen i databasen justeres — det er konfigurasjon, ikke kode.
 
 ---
 
