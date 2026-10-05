@@ -60,9 +60,11 @@ async function handter(request: Request): Promise<Response> {
     const melding =
       resultat.vurdert === 0
         ? "Ingen godkjente meldinger venter på sending."
-        : torrkjoering
-          ? `Tørrkjøring. Vurderte ${resultat.vurdert} godkjente meldinger, ville sendt ${resultat.sendt}. Ingenting er sendt.`
-          : `Vurderte ${resultat.vurdert}. Sendt ${resultat.sendt}, avvist ${resultat.avvist}, ikke konfigurert ${resultat.ikkeKonfigurert}, feilet ${resultat.feilet}.`;
+        : resultat.avsenderId === null
+          ? `Vurderte ${resultat.vurdert} godkjente meldinger, men ingen avsender er satt opp. Uten avsender kan ikke kvotene håndheves, og da sendes ingenting.`
+          : torrkjoering
+            ? `Tørrkjøring. Vurderte ${resultat.vurdert} godkjente meldinger, ville sendt ${resultat.sendt}. Ingenting er sendt.`
+            : `Vurderte ${resultat.vurdert}. Sendt ${resultat.sendt}, avvist ${resultat.avvist}, ikke konfigurert ${resultat.ikkeKonfigurert}, feilet ${resultat.feilet}.`;
 
     await prisma.cronKjoering.update({
       where: { id: kjoering.id },
@@ -115,6 +117,7 @@ async function handter(request: Request): Promise<Response> {
       status: torrkjoering ? "torrkjoert" : "fullfoert",
       melding,
       vurdert: resultat.vurdert,
+      avsenderId: resultat.avsenderId,
       sendt: resultat.sendt,
       avvist: resultat.avvist,
       ikkeKonfigurert: resultat.ikkeKonfigurert,

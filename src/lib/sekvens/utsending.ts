@@ -91,10 +91,16 @@ export async function sendMelding(
   }
 
   // 2. Er kanalen konfigurert? Dette er ikke det samme som at den er slått på.
+  //
+  // MERK rekkefølgen: i TØRRKJØRING hopper vi over denne sjekken. En tørrkjøring
+  // skal kunne vise hva den VILLE gjort, og det er nettopp når kanalen ikke er
+  // satt opp at forhåndsvisningen er mest nyttig. Lå vi denne sjekken først,
+  // svarte tørrkjøringen «ikke konfigurert» og sa ingenting om innholdet.
   const epostStatus = integrasjon("epost");
   const kanal = (process.env.EPOST_KANAL ?? "").trim().toLowerCase();
+  const kanalKonfigurert = epostStatus.konfigurert && kanal !== "";
 
-  if (!epostStatus.konfigurert || kanal === "") {
+  if (!kanalKonfigurert && !valg.torrkjoering) {
     const mangler = epostStatus.manglendeNokler.join(", ") || "EPOST_KANAL";
     return {
       dialogMeldingId,
@@ -196,10 +202,17 @@ export async function sendMelding(
       };
     }
 
+    // Tørrkjøringen sier BÅDE hva den ville gjort og hva som mangler. Den første
+    // utgaven stoppet på «ikke konfigurert» og sa ingenting om innholdet — akkurat
+    // når forhåndsvisningen var mest nyttig.
+    const forbehold = kanalKonfigurert
+      ? ""
+      : ` Merk: kanalen er ikke konfigurert (mangler ${epostStatus.manglendeNokler.join(", ") || "EPOST_KANAL"}), så en ekte kjøring ville stoppet her.`;
+
     return {
       dialogMeldingId,
       utfall: "SENDT",
-      grunn: `Tørrkjøring: ville sendt «${melding.emne ?? "(uten emne)"}» til ${kontakt.epost}. Ingenting er sendt.`,
+      grunn: `Tørrkjøring: ville sendt «${melding.emne ?? "(uten emne)"}» til ${kontakt.epost} fra avsender ${valg.avsenderId}. Alle guardrails passerte (${lov.sjekket.join(", ")}). Ingenting er sendt.${forbehold}`,
     };
   }
 
@@ -317,9 +330,32 @@ export async function kjoerUtsending(valg: {
   avvist: number;
   ikkeKonfigurert: number;
   feilet: number;
+  /** Hvilken avsender jobben brukte. Null hvis ingen er satt opp. */
+  avsenderId: string | null;
   resultater: SendResultat[];
 }> {
   const maks = Math.min(valg.maks ?? 50, 200);
+
+  // Hvem sender? Uten en avsender kan ikke døgnkvote, ukekvote og oppvarming
+  // håndheves, og da sender vi ingenting. Vi velger derfor en EKSPLISITT
+  // avsender her, i stedet for å la feltet være tomt og håpe på det beste.
+  //
+  // Rekkefølgen: den som er oppgitt, ellers den første aktive, ellers den
+  // første i oppvarming. Er det ingen, sier vi det — vi finner ikke på en.
+  const avsender =
+    (valg.avsenderId
+      ? await prisma.avsender.findUnique({ where: { id: valg.avsenderId } })
+      : null) ??
+    (await prisma.avsender.findFirst({
+      where: { status: "AKTIV" },
+      orderBy: { opprettet: "asc" },
+    })) ??
+    (await prisma.avsender.findFirst({
+      where: { status: "OPPVARMING" },
+      orderBy: { opprettet: "asc" },
+    }));
+
+  const avsenderId = avsender?.id ?? null;
 
   // Bare meldinger som står i kø som godkjent og ikke er sendt.
   const klare = await prisma.dialogMelding.findMany({
@@ -338,11 +374,28 @@ export async function kjoerUtsending(valg: {
   let ikkeKonfigurert = 0;
   let feilet = 0;
 
+  // Ingen avsender satt opp: da er svaret det samme for alle meldingene, og vi
+  // sier det én gang per melding så det havner i loggen.
+  if (!avsenderId) {
+    for (const m of klare) {
+      resultater.push({
+        dialogMeldingId: m.id,
+        utfall: "AVVIST_AV_GUARDRAIL",
+        grunn:
+          "Ingen avsender er satt opp. Uten avsender kan ikke kvotene håndheves, og da " +
+          "sendes ingenting. Legg inn en avsender i databasen.",
+      });
+      avvist += 1;
+    }
+
+    return { vurdert: klare.length, sendt, avvist, ikkeKonfigurert, feilet, avsenderId, resultater };
+  }
+
   for (const m of klare) {
     const resultat = await sendMelding(m.id, {
       torrkjoering: valg.torrkjoering,
       naa: valg.naa,
-      avsenderId: valg.avsenderId ?? null,
+      avsenderId,
     });
 
     resultater.push(resultat);
@@ -365,5 +418,5 @@ export async function kjoerUtsending(valg: {
     }
   }
 
-  return { vurdert: klare.length, sendt, avvist, ikkeKonfigurert, feilet, resultater };
+  return { vurdert: klare.length, sendt, avvist, ikkeKonfigurert, feilet, avsenderId, resultater };
 }

@@ -404,5 +404,25 @@ beviset sammenlignet `sjekkOppvarming` med `effektivDognkvote` og de to var ueni
 100. To funksjoner som skal si det samme om samme tilstand, bør alltid sammenlignes.
 **Status:** gjeldende, låst med egen test.
 
+---
+
+## B-032 — Global sikring mot gjetting på cron-hemmelighetene
+
+**Dato:** fase 5
+**Beslutning:** I tillegg til rate limiting per IP teller systemet mislykkede
+hemmelighetsforsøk globalt. Ved 20 feil i minuttet avvises **alle** cron-kall med 429 til
+vinduet er over — også kall med riktig hemmelighet.
+**Begrunnelse:** Rate limiting per IP nøkler på `x-forwarded-for`, som kalleren selv kan
+sette. Et script som sender et tilfeldig `X-Forwarded-For` per forespørsel får ubegrenset
+antall forsøk. Per-IP-grensen er altså ikke et reelt gjerde mot gjetting. Den globale
+telleren ser ikke på hvem som spør, bare på hvor mange som har gjettet feil, og kan derfor
+ikke lures på samme måte.
+**Prøvd:** 20 feilforsøk med 20 ulike forfalskede IP-er over HTTP. Sikringen slo til ved
+forsøk 21, og avviste deretter også et kall med riktig hemmelighet.
+**Kjent begrensning:** telleren er i minnet. Kjører tjenesten på flere instanser, gjelder
+den per instans, og må flyttes til databasen. Railway kjører én replika
+(`numReplicas: 1` i `railway.json`).
+**Status:** gjeldende.
+
 
 
