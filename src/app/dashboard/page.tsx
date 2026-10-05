@@ -7,6 +7,7 @@ import { integrasjonsstatus } from "@/lib/config";
 import { norskTid } from "@/lib/tid/vinduer";
 import { erHelligdag, helligdagNavn } from "@/lib/tid/helligdager";
 import { loggUtHandling } from "@/app/login/actions";
+import AvgjoerelseSkjema from "./AvgjoerelseSkjema";
 
 export const dynamic = "force-dynamic";
 
@@ -212,9 +213,9 @@ export default async function Dashbord() {
           beskrivelse="Godkjenningskøen. Alt med ekstern konsekvens går gjennom den."
           tom="Ingenting venter på godkjenning."
         >
-          <ul className="space-y-2.5">
+          <ul className="space-y-3">
             {godkjenninger.data.map((g) => (
-              <li key={g.id} className="border-t border-kant pt-2.5 first:border-0 first:pt-0">
+              <li key={g.id} className="border-t border-kant pt-3 first:border-0 first:pt-0">
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="text-sm font-medium">{g.tittel}</span>
                   <span className="text-xs text-dempet">{tid(g.opprettet)}</span>
@@ -222,6 +223,12 @@ export default async function Dashbord() {
                 {g.begrunnelse ? (
                   <p className="mt-0.5 text-xs text-dempet">{g.begrunnelse}</p>
                 ) : null}
+                {g.forslagFra === "AGENT" ? (
+                  <p className="mt-1 text-xs text-amber-700">
+                    Foreslått av agenten. Et menneske må bestemme.
+                  </p>
+                ) : null}
+                <AvgjoerelseSkjema id={g.id} />
               </li>
             ))}
           </ul>
