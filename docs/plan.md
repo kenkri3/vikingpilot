@@ -20,7 +20,7 @@
 | 2 | Kjernedata, sperrelister, revisjonslogg | **Fullført og verifisert** |
 | 3 | Enhetsregister-pipeline og utsendingsvakt | **Fullført og verifisert** mot ekte data |
 | 4 | Sekvensmotor med tørrkjøring, og godkjenningskø | **Fullført og verifisert** ende-til-ende |
-| 5 | Herding: frødata, sjekkeliste, dokumentasjon, manuell liste | Neste |
+| 5 | Herding: frødata, sjekkeliste, dokumentasjon, manuell liste | **Pågår.** Uavhengig etterkontroll utført, funn lukket. Gjenstår: prøvd av Kenneth/Fredrik, og Railway-deploy |
 
 **Ingen blokkering står åpen.** F-001 (skallet) var feildiagnostisert og er lukket;
 byggerot-spørsmålet er løst teknisk og venter bare på din aksept. Se `docs/status.md`.
@@ -245,20 +245,65 @@ adresse. Se B-028 og F-017.
 
 ## Fase 5 — Herding
 
+**Status: pågår. Det vesentligste er gjort, men to ting gjenstår utenfor min rekkevidde.**
+
+**Gjort:**
+
+1. ✅ Alle fem cron-ruter bygget, med egen hemmelighet, tørrkjøring og logging
+2. ✅ `kjoerCronjobb()` samler cron-skjelettet på ett sted
+3. ✅ Ryddejobben verifisert mot ekte gamle rader, og den rører ikke bevis
+4. ✅ Dashbordet har godkjenn- og avvis-knapper
+5. ✅ Manuell oppsettliste kjørt fra **tom** database: `dropdb`, `createdb`, `migrate`, `seed`, `verify`, `sjekkeliste`
+6. ✅ **Uavhengig etterkontroll av en annen agent** — oppdragets krav
+7. ✅ To funn av alvor BLOKKERER lukket, pluss fire andre
+8. ✅ Kanalsporing: hovedbryteren kan ikke lenger endres i stillhet
+
+**Bevis:** se `docs/status.md`, avsnittene «Fase 5» og «Uavhengig etterkontroll».
+
+**Hva etterkontrollen fant, og hvorfor det er verdt å merke seg:**
+
+Revisoren fikk beskjed om å motbevise systemets egne påstander. Den fant to feil av
+alvor BLOKKERER som **138 egne tester ikke hadde funnet**:
+
+| Feil | Hva den betydde |
+|---|---|
+| F-023 | `registrerUtsending()` hadde null kallere. Døgnkvote, ukekvote og oppvarmingstak var korrekte funksjoner som aldri ble stilt spørsmålet |
+| F-024 | `kanSende()` hoppet stille over volum og oppvarming når `avsenderId` manglet — og den eneste kalleren oppga den ikke |
+
+**Fellesnevneren er lærerik:** testene mine var ikke svake på logikk, men på
+*integrasjon*. Hver test skrev den tilstanden den trengte direkte i basen, i stedet for å
+gå gjennom koden som skulle produsere den. Da tester man funksjonen, ikke systemet.
+
+Det er samme feilklasse som F-016 i fase 4 — godkjenningen som ikke flyttet meldingen.
+Begge ble funnet ved å kjøre den ekte kjeden, ikke ved å lese koden.
+
+**Hva som gjenstår, og hvorfor jeg ikke kan gjøre det:**
+
+- **Railway-deployen.** Krever Kenneths konto. `railway.json` og `Dockerfile` ligger klare.
+- **At Kenneth eller Fredrik følger den manuelle listen selv.** Jeg har kjørt den fra tom
+  database, men kriteriet sier at listen skal være *prøvd*, og en ekte prøve er at noen
+  andre følger den uten hjelp.
+- **En kontaktkilde.** Uten e-postadresser kan målgruppen fylles, men ikke kontaktes.
+  Se S12.
+
+---
+
+## Fase 5 — de seks stegene, og hvor de står
+
 **Mål:** systemet kan demonstreres uten én eneste ekstern tjeneste, og du kan sette det opp
 uten å skrive kode.
 
-**Steg:**
-
-1. Frødata: hele systemet demonstrerbart offline
-2. `npm run sjekkliste` — verifiserer ende-til-ende uten nettverk
-3. `docs/manuell-oppsett.md` prøvd fra tom mappe
-4. Alle åpne funn av BLOKKERER eller HØY lukket
-5. `docs/oversikt.md` oppdatert med faktisk status
-6. Uavhengig etterkontroll av en annen agent
+| # | Steg | Status |
+|---|---|---|
+| 1 | Frødata: hele systemet demonstrerbart offline | ✅ Seed dekker alle ni moduler |
+| 2 | `npm run sjekkliste` — verifiserer ende-til-ende uten nettverk | ✅ 53 kontroller, alle grønne |
+| 3 | `docs/manuell-oppsett.md` prøvd fra tom mappe | ✅ Kjørt fra 0 tabeller av meg. Gjenstår å bli prøvd av Kenneth eller Fredrik |
+| 4 | Alle åpne funn av BLOKKERER eller HØY lukket | ✅ F-023, F-024 og F-021 lukket. Ingen BLOKKERER eller HØY står åpent |
+| 5 | `docs/oversikt.md` oppdatert med faktisk status | ✅ |
+| 6 | Uavhengig etterkontroll av en annen agent | ✅ Utført. Fant to BLOKKERER-feil, begge lukket |
 
 **Stoppkriterium:** alle åtte stoppkriterier i `docs/stoppkriterier.md` har kommando kjørt
-og bevis innført.
+og bevis innført. Se `docs/stoppkriterier.md` for status per kriterium.
 
 ---
 
@@ -422,10 +467,49 @@ Sjekkelisten utvidet fra 44 til 51 kontroller.
 
 ---
 
-### Neste runde — fase 5
+### Runde 6 — fase 5, første del
 
-Herding. Sjekkelisten prøvd fra tom mappe, uavhengig etterkontroll av en annen agent,
-og en gjennomgang av alle åpne funn.
+**Gjort:** Alle fem cron-ruter. Ryddejobben verifisert mot ekte gamle rader. Dashbordet
+med godkjenn- og avvis-knapper. Manuell oppsettliste kjørt fra tom database.
+**Uavhengig etterkontroll av en annen agent** — oppdragets krav. To BLOKKERER-funn og fire
+andre lukket. Kanalsporing bygget. Dashbordet viser nå køen den faktisk kan tømme.
 
-**Det viktigste som gjenstår før systemet kan brukes på ekte:** en kontaktkilde. Uten
-e-postadresser kan målgruppen fylles, men ikke kontaktes. Se B-028.
+**Endret for en bruker av systemet:** Ja, på flere måter:
+
+- Kenneth og Fredrik kan godkjenne og avvise fra dashbordet, ikke bare se køen.
+- Alle fem cron-jobber kan kjøres, hver med sin egen hemmelighet og tørrkjøring.
+- Systemet kan settes opp fra ingenting med kommandoene i den manuelle listen. Det er
+  prøvd, ikke bare skrevet.
+- Hovedbryteren kan ikke lenger endres i stillhet.
+
+**Rettet egne feil underveis:**
+
+1. **F-023.** Volumvakten telte aldri. Døgnkvote, ukekvote og oppvarmingstak var død kode.
+2. **F-024.** `kanSende()` hoppet over to av fem sjekker, og produksjonskalleren traff
+   den grenen.
+3. **F-021.** Kanalendringer ble ikke revidert.
+4. **F-022.** `verify` kjørte typecheck før build, og feilet fra ren tilstand.
+5. **F-028.** `/api/helse` påstod at utgående var av i stedet for å lese det.
+6. Tre av mine egne testforventninger var feil om tidssoner og ISO-uker. Koden hadde rett.
+
+**Én hendelse verdt å føre videre:** under den uavhengige testen ble
+`EPOST.utgaaendeAktivert` satt til `true` direkte i databasen, og gjenopprettingen feilet
+fordi den lå i en `catch`-gren. Bryteren sto på i ca. 31 sekunder. Den ble oppdaget av
+**sjekkelisten**, ikke av revisoren. Ingen e-post kunne gå ut: `maksPerDag` var 0,
+`EPOST_KANAL` er ikke satt, og `leverTilKanal` er en stubbe. Hendelsen er den beste
+illustrasjonen av hvorfor F-021 måtte lukkes.
+
+**Blokkert av:** ingenting jeg kan løse selv. Det som gjenstår krever Kenneth:
+Railway-deployen, en kontaktkilde (S12), og at noen andre følger den manuelle listen.
+
+---
+
+### Neste runde — hvis ingenting endres
+
+F-025 og F-026 er de mest verdifulle av de gjenstående funnene: begge gjør at en
+konfigurasjon ser ut til å virke uten å gjøre det. F-025 hindrer avsenderspesifikk
+oppvarming, F-026 gjør en domenesperre med store bokstaver virkningsløs.
+
+Dernest: `leverTilKanal` og selve e-postintegrasjonen. Men **den bør ikke bygges før
+S1 og S2 er besvart** — å bygge en sender uten å vite hvilken kanal og hvilke avsendere
+er å bygge i blinde.
