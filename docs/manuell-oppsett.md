@@ -243,11 +243,57 @@ Sjekk at `.env` **ikke** er med i `git status` før du committer. Den skal være
 
 Se Del C. Legg dem inn under **Variables** på app-tjenesten.
 
-## B6. Slå på utgående trafikk
+## B6. Lag din egen bruker
+
+**Dette er steget som gjør at du faktisk kommer inn.** Systemet oppretter ingen bruker av
+seg selv — et passord skal velges av et menneske, ikke genereres i en oppstartsjobb og
+havne i en logg.
+
+Åpne **Shell**-fanen på app-tjenesten i Railway og kjør:
+
+```bash
+npm run bruker:lag -- --epost kenneth@vikingnet.no --navn "Kenneth Kristiansen"
+```
+
+Du blir spurt om passordet, og det vises ikke på skjermen. Kravene er minst 12 tegn, med
+én liten bokstav, én stor bokstav og ett tall.
+
+Kjør den én gang til for Fredrik:
+
+```bash
+npm run bruker:lag -- --epost fredrik@vikingnet.no --navn "Fredrik Rostrup Ellingsen"
+```
+
+**Lokalt** gjør du det samme i `C:\VikingPilot`:
+
+```powershell
+npm run bruker:lag -- --epost kenneth@vikingnet.no --navn "Kenneth Kristiansen"
+```
+
+> Kommandoen kan også **endre passordet** på en bruker som finnes. Da avsluttes alle aktive
+> sesjoner for den brukeren, og hendelsen skrives til revisjonsloggen.
+
+---
+
+## B7. Kontroller at tjenesten kom opp
+
+Grunndataene — kanaler, cron-jobber, målgruppe, produkter og sekvens — settes opp
+**automatisk ved oppstart**. Du skal ikke trenge å gjøre noe. Men sjekk at det stemte:
+
+```bash
+npm run forhåndssjekk
+```
+
+Den sier blant annet om skjemaet er satt opp, om frødataene finnes, og at all utgående
+trafikk er av. Er noe galt, sier den hva.
+
+---
+
+## B8. Slå på utgående trafikk
 
 **Ikke gjør dette før systemet kjører og du har sett dashbordet.**
 
-Dette er bryteren for at noe i det hele tatt kan gå ut. Den er av fra første migrasjon.
+Dette er bryteren for at noe i det hele tatt kan gå ut. Den er av fra første migrering.
 Settes per kanal, og først når du har bestemt deg:
 
 | Variabel | Standard | Betydning |
@@ -255,7 +301,33 @@ Settes per kanal, og først når du har bestemt deg:
 | `UTGAAENDE_EPOST_AKTIVERT` | `false` | Setter `true` gjør at e-post kan sendes — men bare gjennom godkjenningskøen |
 
 > Selv med denne satt til `true` går ingenting ut uten at noen har godkjent det i køen.
-> Bryteren er et ekstra gjerde, ikke hovedgjerde.
+> Bryteren er et ekstra gjerde, ikke hovedgjerde. **Kanalen i databasen må også åpnes**,
+> og det krever navn og en begrunnelse — og havner i revisjonsloggen.
+
+---
+
+## B9. Sett opp cron-jobbene
+
+De fem cron-jobbene ligger i databasen med forslag til tidspunkt, men **Railway kjører dem
+ikke av seg selv**. Du må peke en ekstern tjeneste mot rutene.
+
+```
+POST https://DIN-RAILWAY-URL/api/cron/enhetsregister
+Authorization: Bearer <CRON_SECRET_ENHETSREGISTER>
+```
+
+| Rute | Hemmelighet | Foreslått |
+|---|---|---|
+| `/api/cron/enhetsregister` | `CRON_SECRET_ENHETSREGISTER` | 06:00 på hverdager |
+| `/api/cron/oppvarming` | `CRON_SECRET_OPPVARMING` | 05:00 hver dag |
+| `/api/cron/sekvens` | `CRON_SECRET_SEKVENS` | 07:00 på hverdager |
+| `/api/cron/utsending` | `CRON_SECRET_UTSENDING` | hvert 15. min, 08–16 på hverdager |
+| `/api/cron/rydding` | `CRON_SECRET_RYDDING` | 03:00 søndager |
+
+**Alle tørrkjører som standard.** Legg til `?torrkjoering=false` for å faktisk utføre noe.
+
+Fram til du setter opp dette, kjører ingenting av seg selv. Det er trygt, men systemet
+fyller seg heller ikke selv.
 
 ---
 

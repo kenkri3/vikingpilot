@@ -575,12 +575,45 @@ exit-kode 1.
 
 ---
 
+### Runde 9 — fase 5, fjerde del
+
+**Gjort:** Fant og lukket en **reell deploy-blokker**. Railway kjørte `prisma migrate deploy`,
+men aldri seeding — `prisma db seed` krever tsx, som er en utvikleravhengighet og ikke
+finnes i produksjonsbildet. Første oppstart ville derfor gitt et tomt system: null kanaler,
+null cron-jobber, null målgruppe, og **ingen bruker å logge inn med**. Den manuelle listen
+nevnte ikke engang at en bruker måtte opprettes.
+
+**Endret for en bruker av systemet:** Ja, og det var forskjellen mellom «deployer og virker»
+og «deployer og møter et tomt dashbord du ikke kommer inn på»:
+
+- Grunndata settes nå opp automatisk ved oppstart, og er idempotent
+- `npm run bruker:lag` lager eller endrer en bruker, med passordet skjult og styrken sjekket
+- Den manuelle listen har fått **B6 Lag din egen bruker**, **B7 Kontroller at tjenesten kom
+  opp** og **B9 Sett opp cron-jobbene** — tre steg som manglet helt
+
+**Fire feil funnet og rettet underveis:**
+
+| Feil | Konsekvens |
+|---|---|
+| Dockerfile brukte `node:20` | Node 20 kan ikke lese TypeScript. Den genererte Prisma-klienten **er** TypeScript, og uten tsx i bildet kunne den ikke lastes i det hele tatt |
+| `src/generated` ble ikke kopiert inn i kjøresteget | Oppstartsjobben ville ikke funnet Prisma-klienten |
+| Ingen seeding i produksjon | Tomt system ved første oppstart |
+| Ingen måte å lage bruker på | Kunne ikke logge inn |
+
+**Hvordan jeg vet at den nye oppstartsjobben virker:** kjørte `start-prod.mjs` lokalt og
+leste loggen. Den kjørte migreringer, satte opp grunndata, og startet serveren. `/api/helse`
+svarte 200 med `noenAapne: false`.
+
+Og for brukeren: opprettet en testbruker med `npm run bruker:lag`, logget inn med riktig
+passord (OK), prøvde feil passord (avvist), og ryddet opp. Svakt passord ble avvist med
+tre konkrete grunner.
+
+**Blokkert av:** ingenting jeg kan løse selv.
+
+---
+
 ### Neste runde — hvis ingenting endres
 
-Det som gjenstår er verifisering som krever Kenneth, ikke arbeid i systemet:
-
-- Railway-deployen (kriterium 2)
-- At han eller Fredrik følger den manuelle listen selv (kriterium 7), nå med D0 først
-
-Utover det står bare småfunn igjen: F-017 (kontaktkilde), F-019 og F-020 (to ulike
-cron-mønstre), F-032 (rate limiting i minnet). Alle er LAV eller MIDDELS og dokumentert.
+Det som gjenstår er verifisering som krever Kenneth, ikke arbeid i systemet. De gjenværende
+funnene er alle LAV eller MIDDELS: F-003 (revisjonsloggen håndheves ikke i databasen),
+F-017 (kontaktkilde), F-019 og F-020 (to ulike cron-mønstre), F-032 (rate limiting i minnet).

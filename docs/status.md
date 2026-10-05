@@ -3,7 +3,7 @@
 Oppdragets regel 1: *«Ingen påstand uten dekning. Skill verifisert, antatt og ikke
 sjekket.»* Dette dokumentet er stedet der den regelen håndheves.
 
-Sist oppdatert: etter runde 8 (fase 5, tredje del).
+Sist oppdatert: etter runde 9 (fase 5, fjerde del).
 
 ---
 
@@ -185,6 +185,10 @@ Alvor etter skalaen BLOKKERER / HØY / MIDDELS / LAV.
 | F-029 | ~~LAV~~ | ~~Tørrkjøring i `sendMelding` sjekket kanalkonfigurasjon før tørrkjøringsgrenen~~ | **Lukket.** Tørrkjøring hopper nå over konfigurasjonssjekken og rapporterer både hva den ville sendt, hvilke sjekker som passerte, og at kanalen mangler |
 | F-028 | ~~LAV~~ | ~~`/api/helse` svarte `utgaaende: { standard: "av" }` som en streng, ikke fra databasen~~ | **Lukket.** Leser nå `KanalInnstilling`, og svarer «antar det verste» hvis lesingen feiler |
 | F-032 | LAV | Rate limiting er i minnet, og den globale sikringen i B-032 gjelder derfor per instans | Åpent, og dokumentert. Railway kjører én replika (`numReplicas: 1`), så i praksis gjelder den for hele tjenesten. Skal flyttes til databasen hvis tjenesten noen gang skaleres |
+| F-033 | ~~BLOKKERER~~ | ~~Ingen seeding kjørte i produksjon. Railway kjørte migreringer, men `prisma db seed` krever tsx, som ikke finnes i produksjonsbildet. Første oppstart ga et tomt system~~ | **Lukket.** `scripts/grunndata.mjs` settes opp ved oppstart fra `start-prod.mjs`, og er idempotent. Prøvd: kjørte `start-prod.mjs` og leste loggen — migreringer, grunndata, server, `/api/helse` 200 |
+| F-034 | ~~BLOKKERER~~ | ~~Det fantes ingen måte å opprette en bruker på i produksjon, så ingen kunne logge inn~~ | **Lukket.** `npm run bruker:lag`. Passordet skjules, styrken sjekkes med samme kode som innloggingen, og både oppretting og passordbytte skrives til revisjonsloggen. Prøvd: opprettet bruker, logget inn med riktig passord, avvist med feil |
+| F-035 | ~~HØY~~ | ~~Dockerfile brukte `node:20`, som ikke kan lese TypeScript. Den genererte Prisma-klienten ER TypeScript, og uten tsx i bildet kunne den ikke lastes~~ | **Lukket.** Byttet til `node:22-alpine`. Prøvd at ren Node laster klienten uten flagg |
+| F-036 | ~~HØY~~ | ~~`src/generated` ble ikke kopiert inn i kjøresteget i Dockerfile, så oppstartsjobben ville ikke funnet Prisma-klienten~~ | **Lukket.** Kopieres eksplisitt |
 | F-030 | ~~LAV~~ | ~~`/api/helse` og dashbordet viste rå Prisma-feilmelding~~ | **Lukket som forsiktighetstiltak.** Revisoren klarte **ikke** å fremprovosere en lekkasje, så dette var en mistanke og ikke et bevis. `/api/helse` vasker nå meldingen med `vask()` likevel — det koster ingenting, og `vask()` brukes overalt ellers |
 
 **Ingen funn av alvor BLOKKERER eller HØY står åpent.** Stoppkriterium 8 er oppfylt for

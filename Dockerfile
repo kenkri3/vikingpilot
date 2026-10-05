@@ -1,10 +1,17 @@
 # VikingPilot — produksjonsbilde.
 #
-# Migreringer kjøres ikke her, men ved oppstart i scripts/start-prod.mjs.
-# Det gjør at skjemaet setter seg selv opp mot en tom database, og at en
-# feilende migrering stopper tjenesten i stedet for å gi en halvferdig base.
-
-FROM node:20-alpine AS base
+# Migreringer OG grunndata kjøres ikke her, men ved oppstart i
+# scripts/start-prod.mjs. Det gjør at systemet setter seg selv opp mot en tom
+# database, og at en feilende migrering stopper tjenesten i stedet for å gi en
+# halvferdig base.
+#
+# NODE 22, IKKE 20 — og grunnen er ikke tilfeldig:
+# Den genererte Prisma-klienten er TypeScript-filer, og Prisma 7 genererer dem
+# ikke som JavaScript. Uten tsx (som er en utvikleravhengighet og ikke finnes i
+# dette bildet) må Node selv kunne lese dem. Det kan Node fra 22.6 med
+# --experimental-strip-types, og fra 22.18 uten flagg. Node 20 kan det ikke.
+# Prøvd: klienten lastes av ren Node 24 uten flagg. Se docs/status.md.
+FROM node:22-alpine AS base
 RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
 
@@ -57,6 +64,11 @@ COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
 COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/next.config.ts ./next.config.ts
+
+# Den genererte Prisma-klienten MÅ med. Den ligger i src/generated, ikke i
+# node_modules, og uten den kan ikke oppstartsjobben sette opp grunndata.
+# Den ble glemt i første versjon av dette bildet.
+COPY --from=builder /app/src/generated ./src/generated
 
 USER nextjs
 EXPOSE 3000
