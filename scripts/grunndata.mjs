@@ -274,7 +274,107 @@ export async function settOppGrunndata(prisma) {
   }
   gjort.push(`sekvens med ${SEKVENSN_STEG.length} steg`);
 
+  // 8. Bruker fra miljøvariabler, hvis oppgitt.
+  gjort.push(...(await settOppBrukerFraMiljoe(prisma)));
+
   return gjort;
+}
+
+/**
+ * Oppretter en bruker fra ADMIN_EMAIL og ADMIN_PASSWORD, hvis de er satt.
+ *
+ * HVORFOR DETTE FINNES:
+ * Å lage brukere var en egen kommando (`npm run bruker:lag`) som måtte kjøres i
+ * Railways Shell-fane etter deploy. Det er ett steg for mye å huske på, og uten
+ * det kommer du ikke inn på dashbordet. Med disse variablene settes brukeren opp
+ * av seg selv ved første oppstart.
+ *
+ * SIKKERHET — dette er vurderingene bak koden:
+ *
+ *   1. Passordet logges ALDRI. Ikke helt, ikke delvis, ikke hashet. Vi sier bare
+ *      at en bruker ble opprettet, og en forkortet e-postadresse.
+ *   2. Er brukeren med denne e-postadressen der fra før, rører vi den IKKE.
+ *      Ellers ville variablene overskrevet et passord du senere har byttet — og
+ *      et gammelt passord i en variabel ville blitt den gyldige nøkkelen igjen.
+ *      Men vi sperrer ikke for å opprette en NY bruker bare fordi andre finnes.
+ *      Det var en feil i første utgave: seed legger inn to brukere, så på en
+ *      fersk deploy ville ADMIN_EMAIL aldri virket i det hele tatt.
+ *   3. Passordstyrken sjekkes med NØYAKTIG samme funksjon som innloggingen og
+ *      `bruker:lag` bruker. Er den ikke sterk nok, opprettes ingen bruker, og vi
+ *      sier hvorfor. Et svakt passord på et system som kan sende e-post er verre
+ *      enn ingen bruker.
+ *   4. Er ADMIN_PASSWORD satt men for svak, stopper vi ikke tjenesten. Vi sier
+ *      fra, og tjenesten kjører videre uten brukeren. Dashbordet viser at ingen
+ *      bruker finnes.
+ */
+export async function settOppBrukerFraMiljoe(prisma) {
+  const epost = (process.env.ADMIN_EMAIL ?? "").trim().toLowerCase();
+  const passord = process.env.ADMIN_PASSWORD ?? "";
+  const navn = (process.env.ADMIN_NAVN ?? "").trim();
+
+  // Ikke satt i det hele tatt? Da er det ingen ting å gjøre.
+  if (epost === "" && passord === "") {
+    return [];
+  }
+
+  if (epost === "" || passord === "") {
+    const mangler = epost === "" ? "ADMIN_EMAIL" : "ADMIN_PASSWORD";
+    return [`ADVARSEL: ${mangler} mangler, så ingen bruker ble opprettet. Begge må være satt.`];
+  }
+
+  if (!epost.includes("@")) {
+    return [`ADVARSEL: ADMIN_EMAIL ser ikke ut som en e-postadresse. Ingen bruker opprettet.`];
+  }
+
+  // Finnes brukeren allerede, rører vi den ikke. Se punkt 2 over.
+  const finnes = await prisma.bruker.findUnique({ where: { epost }, select: { id: true } });
+
+  if (finnes) {
+    return ["brukeren finnes fra før — passordet blir ikke endret av ADMIN-variablene"];
+  }
+
+  // Samme styrkesjekk som innloggingen bruker.
+  const { hashPassord, sjekkPassordstyrke } = await import("../src/lib/auth/passord.ts");
+
+  const svakheter = sjekkPassordstyrke(passord);
+
+  if (svakheter.length > 0) {
+    return [
+      `ADVARSEL: ADMIN_PASSWORD er ikke sterkt nok, så ingen bruker ble opprettet: ${svakheter.join(" ")}`,
+    ];
+  }
+
+  const { hash } = await hashPassord(passord);
+
+  const bruker = await prisma.bruker.create({
+    data: {
+      epost,
+      navn: navn || epost,
+      passordHash: hash,
+      passordSalt: "se-hash",
+      rolle: "BRUKER",
+    },
+    select: { id: true },
+  });
+
+  await prisma.revisjon.create({
+    data: {
+      handling: "BRUKER_OPPRETTET",
+      aktor: epost,
+      aktorType: "BRUKER",
+      entitet: "Bruker",
+      entitetId: bruker.id,
+      grunnlag: "Opprettet fra ADMIN_EMAIL og ADMIN_PASSWORD ved oppstart.",
+      resultat: "Brukeren er opprettet",
+      resultatStatus: "ok",
+      kilde: "scripts/grunndata.mjs",
+    },
+  });
+
+  // Forkortet adresse, aldri passordet.
+  const forkortet = epost.length > 3 ? `${epost.slice(0, 3)}…` : "…";
+
+  return [`1 bruker opprettet (${forkortet})`];
 }
 
 /**

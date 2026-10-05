@@ -480,3 +480,30 @@ Etter: **0,8 MB** byggekontekst.
 at det ville gå bra fordi det gikk bra lokalt. Docker bruker ikke `.gitignore` — at `.env`
 var ignorert av git, beskyttet den ikke mot Docker.
 **Status:** gjeldende.
+---
+
+## B-036 — Bruker kan opprettes fra miljøvariabler ved oppstart
+
+**Dato:** fase 5, under deploy
+**Beslutning:** Er `ADMIN_EMAIL` og `ADMIN_PASSWORD` satt, opprettes brukeren automatisk
+ved første oppstart fra `scripts/grunndata.mjs`. `ADMIN_NAVN` er valgfri.
+**Begrunnelse:** Å lage bruker var en egen kommando som måtte kjøres i Railways Shell-fane
+etter deploy. Det er ett steg for mye å huske på, og uten det kommer du ikke inn på
+dashbordet. Variablene fjerner det steget.
+**Sikkerhetsvurderingene:**
+
+1. Passordet logges aldri — ikke helt, ikke delvis, ikke hashet. Loggen sier bare at en
+   bruker ble opprettet, med en forkortet adresse (`adm…`).
+2. Passordstyrken sjekkes med **samme funksjon** som innloggingen og `bruker:lag` bruker.
+   Er den for svak, opprettes ingen bruker, og loggen sier hvorfor.
+3. Variablene rører **aldri** en bruker som finnes fra før. Ellers ville et gammelt passord
+   i en variabel blitt den gyldige nøkkelen igjen etter at du hadde byttet det.
+4. Er passordet for svakt, stopper ikke tjenesten. Den kjører videre, og dashbordet viser
+   at ingen bruker finnes.
+
+**En feil jeg gjorde og rettet:** første utgave sperret for oppretting så snart det fantes
+*noen* brukere. Men `prisma/seed.ts` legger inn to brukere, så på en fersk deploy ville
+`ADMIN_EMAIL` aldri virket — variablene ville vært nytteløse, og feilen ville vært stille.
+Testen fanget den: den viste `bruker i basen: FINNES IKKE` mens den rapporterte at alt var
+greit. Rettingen sperrer bare på at *denne* e-postadressen finnes.
+**Status:** gjeldende.

@@ -249,6 +249,31 @@ Se Del C. Legg dem inn under **Variables** på app-tjenesten.
 seg selv — et passord skal velges av et menneske, ikke genereres i en oppstartsjobb og
 havne i en logg.
 
+### Enkleste vei: legg inn to variabler
+
+Legg disse inn på app-tjenesten under **Variables**:
+
+| Variabel | Eksempel |
+|---|---|
+| `ADMIN_EMAIL` | `kenneth@vikingnet.no` |
+| `ADMIN_PASSWORD` | et passord på minst 12 tegn, med stor bokstav og tall |
+| `ADMIN_NAVN` | `Kenneth Kristiansen` (valgfri) |
+
+Ved neste oppstart opprettes brukeren automatisk. Du ser det i loggen:
+
+```
+Grunndata er på plass: …, 1 bruker opprettet (ken…)
+```
+
+Passordet logges aldri. Er det for svakt, opprettes ingen bruker, og loggen sier hvorfor.
+Tjenesten starter likevel.
+
+> **Variablene rører aldri en bruker som finnes fra før.** Har du byttet passord inne i
+> systemet, blir det stående. Et gammelt passord i en variabel skal ikke kunne bli gyldig
+> igjen. Vil du bytte passord senere, bruk kommandoen under.
+
+### Alternativ: kommandoen
+
 Åpne **Shell**-fanen på app-tjenesten i Railway og kjør:
 
 ```bash
@@ -271,7 +296,8 @@ npm run bruker:lag -- --epost kenneth@vikingnet.no --navn "Kenneth Kristiansen"
 ```
 
 > Kommandoen kan også **endre passordet** på en bruker som finnes. Da avsluttes alle aktive
-> sesjoner for den brukeren, og hendelsen skrives til revisjonsloggen.
+> sesjoner for den brukeren, og hendelsen skrives til revisjonsloggen. Det er denne du
+> bruker hvis du vil bytte passord — ikke ADMIN-variablene.
 
 ---
 
